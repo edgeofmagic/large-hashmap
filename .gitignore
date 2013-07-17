@@ -1,6 +1,38 @@
+
+/build/
+/bin/
+target/
+
 *.class
 
 # Package Files #
 *.jar
 *.war
 *.ear
+*.db
+
+# Maven target
+
+
+.DS_Store
+.DS_Store?
+
+# Eclipse
+
+.project
+.metadata
+bin/**
+tmp/**
+tmp/**/*
+*.tmp
+*.bak
+*.swp
+*~.nib
+local.properties
+.classpath
+.settings/
+.loadpath
+*.prefs
+
+.buildpath
+.launch
