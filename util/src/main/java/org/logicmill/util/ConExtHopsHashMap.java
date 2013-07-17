@@ -1087,10 +1087,10 @@ public class ConExtHopsHashMap<K, V> implements LargeHashMap<K, V> {
 	 * <li> If the key can be cast to {@link LongHashable}, the default
 	 * adapter method {@code getLongHashCode()} returns {@code 
 	 * ((LongHashable)key).getLongHashCode()}.
-	 * <li> If the key can be case to {@link CharSequence}, the default
+	 * <li> If the key can be cast to {@link CharSequence}, the default
 	 * adapter method {@code getLongHashCode()} returns {@code 
 	 * SpookyHash64.hash((CharSequence)key, 0L)}.
-	 * <li> If the key can be case to {@code byte[]}, the default
+	 * <li> If the key can be cast to {@code byte[]}, the default
 	 * adapter method {@code getLongHashCode()} returns {@code 
 	 * SpookyHash64.hash((byte[])key, 0L)}.
 	 * </ul>
