@@ -1070,7 +1070,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * new ConcurrentLargeHashMap&lt;BigInteger, String&gt;(8192, 8, 0.8f, 
 	 * 	new LargeHashMap.KeyAdapter&lt;BigInteger&gt;() {
 	 * 		public long getHashCode(BigInteger key) {
-	 * 			return org.logicmill.spookyhash.SpookyHash64.hash(key.toByteArray, 0L);
+	 * 			return org.logicmill.util.hash.SpookyHash64.hash(key.toByteArray, 0L);
 	 *		}
 	 *	}
 	 * );</code></pre>
