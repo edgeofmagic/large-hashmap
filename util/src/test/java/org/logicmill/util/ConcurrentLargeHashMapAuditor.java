@@ -20,25 +20,27 @@ import java.util.LinkedList;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
-import org.logicmill.util.ConExtHopsHashMapProbe.ProbeInternalException;
-import org.logicmill.util.ConExtHopsHashMapProbe.SegmentProbe;
+import org.logicmill.util.ConcurrentLargeHashMapProbe.ProbeInternalException;
+import org.logicmill.util.ConcurrentLargeHashMapProbe.SegmentProbe;
 
 /** An object that verifies the integrity of an instance of 
- * {@link ConExtHopsHashMap}. This class uses {@link ConExtHopsHashMapProbe}
- * to gain access to private members of {@code ConExtHopsHashMap}.
+ * {@link ConcurrentLargeHashMap}. This class uses {@link ConcurrentLargeHashMapProbe}
+ * to gain access to private members of {@code ConcurrentLargeHashMap}.
  * 
  * The auditor can be used on the map in its entirety:<pre><code>
- * ConExtHopsHashMap<String, Integer> map = new ConExtHopsHashMap( ... );
- * ConExtHopsHashMapAuditor auditor = new ConExtHopsHashMapAuditor(map);
+ * ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap( ... );
+ * ConcurrentLargeHashMapAuditor auditor = new ConcurrentLargeHashMapAuditor(map);
  * ...
- * auditor.verifyMapIntegrigy(true, 0);
+ * auditor.verifyMapIntegrity(true, 0);
  * </code></pre>
  * or on individual segments:
+ * 
+ * @TODO finish javadoc
  * 
  * @author David Curtis
  *
  */
-public class ConExtHopsHashMapAuditor {
+public class ConcurrentLargeHashMapAuditor {
 	
 	private class ExceptionLimitReachedException extends Exception {
 		private static final long serialVersionUID = -6214653529057631843L;
@@ -83,7 +85,7 @@ public class ConExtHopsHashMapAuditor {
 	public class SegmentAuditor {
 		
 		private final SegmentProbe segmentProbe;
-		private final ConExtHopsHashMapProbe mapProbe;
+		private final ConcurrentLargeHashMapProbe mapProbe;
 
 		public SegmentAuditor(SegmentProbe segmentProbe) {
 			this.segmentProbe = segmentProbe;
@@ -243,15 +245,15 @@ public class ConExtHopsHashMapAuditor {
 		}
 	}
 	
-	private final ConExtHopsHashMap map;
-	private final ConExtHopsHashMapProbe mapProbe;
+	private final ConcurrentLargeHashMap map;
+	private final ConcurrentLargeHashMapProbe mapProbe;
 	private final int NULL_OFFSET;
 	private final int HOP_RANGE;
 	private final boolean GATHER_METRICS;
 
-	public ConExtHopsHashMapAuditor(ConExtHopsHashMap map) {
+	public ConcurrentLargeHashMapAuditor(ConcurrentLargeHashMap map) {
 		this.map = map;
-		mapProbe = new ConExtHopsHashMapProbe(map);
+		mapProbe = new ConcurrentLargeHashMapProbe(map);
 		NULL_OFFSET = mapProbe.getNullOffset();
 		HOP_RANGE = mapProbe.getHopRange();
 		GATHER_METRICS = mapProbe.getGatherMetrics();

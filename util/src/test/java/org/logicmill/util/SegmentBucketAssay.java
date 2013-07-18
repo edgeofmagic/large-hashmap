@@ -15,7 +15,7 @@
  */
 package org.logicmill.util;
 
-import org.logicmill.util.ConExtHopsHashMapProbe.SegmentProbe;
+import org.logicmill.util.ConcurrentLargeHashMapProbe.SegmentProbe;
 
 public class SegmentBucketAssay extends BucketStructureAssay {
 	

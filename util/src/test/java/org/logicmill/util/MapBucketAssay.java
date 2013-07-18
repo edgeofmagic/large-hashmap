@@ -16,10 +16,10 @@
 package org.logicmill.util;
 
 import java.util.Iterator;
-import org.logicmill.util.ConExtHopsHashMapProbe.SegmentProbe;
+import org.logicmill.util.ConcurrentLargeHashMapProbe.SegmentProbe;
 
 public class MapBucketAssay extends BucketStructureAssay {
-	private final ConExtHopsHashMapProbe mapProbe;
+	private final ConcurrentLargeHashMapProbe mapProbe;
 	private final int segmentCount;
 	private final int directorySize;
 	
@@ -41,7 +41,7 @@ public class MapBucketAssay extends BucketStructureAssay {
 		}
 	}
 	
-	public MapBucketAssay(ConExtHopsHashMapProbe mapProbe) {
+	public MapBucketAssay(ConcurrentLargeHashMapProbe mapProbe) {
 		super(mapProbe.getSegmentCount()*mapProbe.getSegmentSize(), mapProbe.getHopRange());
 		this.mapProbe = mapProbe;
 		this.segmentCount = mapProbe.getSegmentCount();

@@ -15,9 +15,9 @@
  */
 package org.logicmill.util;
 
-import org.logicmill.util.ConExtHopsHashMapProbe.SegmentProbe;
+import org.logicmill.util.ConcurrentLargeHashMapProbe.SegmentProbe;
 
-/** Thrown by {@link ConExtHopsHashMapAuditor#verifyMapIntegrity(boolean, int)}
+/** Thrown by {@link ConcurrentLargeHashMapAuditor#verifyMapIntegrity(boolean, int)}
  * to indicate the detection of an entry whose hash code does not match the 
  * bucket in which it was found.
  * @author David Curtis

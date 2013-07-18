@@ -15,9 +15,9 @@
  */
 package org.logicmill.util;
 
-import org.logicmill.util.ConExtHopsHashMapProbe.SegmentProbe;
+import org.logicmill.util.ConcurrentLargeHashMapProbe.SegmentProbe;
 
-/** Thrown by {@link ConExtHopsHashMapAuditor#verifyMapIntegrity(boolean, int)}
+/** Thrown by {@link ConcurrentLargeHashMapAuditor#verifyMapIntegrity(boolean, int)}
  * to indicate that a non-null entry in the specified segment's {@code entries} 
  * array is not in the linked list of the bucket identified by the entry's hash
  * code.

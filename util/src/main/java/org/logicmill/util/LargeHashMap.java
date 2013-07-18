@@ -24,21 +24,20 @@ import java.util.Iterator;
  * {@link java.util.Map}{@code <K,V>}, appropriate for large hash maps.
  * It differs from {@code java.util.Map<K,V>} in the following ways:
  * <ol>
- * <li>It omits methods that would entail a full traversal of the map, 
- * such as {@link java.util.Map#containsValue(Object)}.
+ * <li>It omits methods that would entail a full traversal of the map in a 
+ * single method, such as {@link java.util.Map#containsValue(Object)}.
  * <li>It omits methods that would return the contents of the entire 
  * map as other collection views, such as {@link java.util.Map#entrySet()}.
  * <li>As an alternative to collection views, it provides iterators
  * for keys, values, and entries (associated key/value pairs).
  * <li>It supports 64-bit hash code values by requiring the programmer
- * to provide a <i>key adapter</i> implementing {@link LargeHashMap.KeyAdapter}{@code <K>},
- * to compute {@code long} hash codes for instances of the key type K.
+ * to provide a <i>key adapter</i> implementing 
+ * {@link LargeHashMap.KeyAdapter}{@code <K>},
+ * to compute {@code long} hash codes for instances of the key type.
  * </ol>
  * The omissions are motivated by the impracticality of such operations on 
  * maps of extremely large size. Consequently, this interface and its 
- * implementations are not participants in the <a 
- * href="http://docs.oracle.com/javase/6/docs/technotes/guides/collections/index.html">
- * Java Collections Framework</a>.<p>
+ * implementations are not participants in the Java Collections Framework.<p>
  * Implementations of LargeHashMap must not allow {@code null} to be used 
  * as a key or value.
  * 
