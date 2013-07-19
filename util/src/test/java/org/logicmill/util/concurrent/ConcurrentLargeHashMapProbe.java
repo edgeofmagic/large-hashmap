@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.logicmill.util;
+package org.logicmill.util.concurrent;
 
 import java.util.BitSet;
 import java.util.Iterator;
@@ -22,6 +22,9 @@ import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.ReentrantLock;
+
+import org.logicmill.util.LargeHashMap;
+import org.logicmill.util.LargeHashMap.Entry;
 
 
 /** A reflection-based test probe for inspecting the internal data structures 

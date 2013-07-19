@@ -1,4 +1,4 @@
-package org.logicmill.util;
+package org.logicmill.util.concurrent;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -38,6 +38,10 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.logicmill.util.LargeHashMap;
+import org.logicmill.util.LargeHashMap.Entry;
+import org.logicmill.util.LargeHashMap.KeyAdapter;
+import org.logicmill.util.concurrent.ConcurrentLargeHashMap;
 
 @SuppressWarnings("javadoc")
 public class ConcurrentLargeHashMapTest {
@@ -111,7 +115,7 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testConcurrentPutRemoveGet8() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		testConcurrentPutRemoveGet(8, 1024, 10000000L, 4096, 8, 0.8f);
+		testConcurrentPutRemoveGet(8, 1024, 1000000L, 4096, 8, 0.8f);
 	}
 
 	/*
@@ -529,7 +533,7 @@ public class ConcurrentLargeHashMapTest {
 	
 	@Test
 	public void testConcurrentGet4() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		testConcurrentGet(4, 50000000L, 8192, 4, 0.8f);
+		testConcurrentGet(4, 5000000L, 8192, 4, 0.8f);
 	}
 	
 	private void testConcurrentGet(int threadCount, final long getLimit, int segSize, int segCount, float loadFactor)

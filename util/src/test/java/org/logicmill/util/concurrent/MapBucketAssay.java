@@ -13,10 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.logicmill.util;
+package org.logicmill.util.concurrent;
 
 import java.util.Iterator;
-import org.logicmill.util.ConcurrentLargeHashMapProbe.SegmentProbe;
+
+import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
 
 public class MapBucketAssay extends BucketStructureAssay {
 	private final ConcurrentLargeHashMapProbe mapProbe;

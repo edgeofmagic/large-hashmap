@@ -13,15 +13,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.logicmill.util;
+package org.logicmill.util.concurrent;
 
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
-import org.logicmill.util.ConcurrentLargeHashMapProbe.ProbeInternalException;
-import org.logicmill.util.ConcurrentLargeHashMapProbe.SegmentProbe;
+import org.logicmill.util.LargeHashMap;
+import org.logicmill.util.LargeHashMap.Entry;
+import org.logicmill.util.concurrent.ConcurrentLargeHashMap;
+import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.ProbeInternalException;
+import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
 
 /** An object that verifies the integrity of an instance of 
  * {@link ConcurrentLargeHashMap}. This class uses {@link ConcurrentLargeHashMapProbe}

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.logicmill.util;
+package org.logicmill.util.concurrent;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
@@ -25,6 +25,8 @@ import java.util.BitSet;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
+import org.logicmill.util.LargeHashMap;
+import org.logicmill.util.LongHashable;
 import org.logicmill.util.hash.SpookyHash64;
 
 /** 
@@ -100,7 +102,8 @@ import org.logicmill.util.hash.SpookyHash64;
  * provided. <i>Key adapters</i> are helper classes that compute 64-bit hash 
  * codes for specific key types, allowing a class to be used as a key when it 
  * is not practical or possible to modify or extend the key class itself. Key
- * adapters implement the interface {@link LargeHashMap.KeyAdapter}{@code <K>}.
+ * adapters implement the interface 
+ * {@link org.logicmill.util.LargeHashMap.KeyAdapter}{@code <K>}.
  * The map constructor accepts a key adapter as a parameter, causing that
  * adapter to be used by the map to obtain hash codes from keys. See
  * {@link #ConcurrentLargeHashMap(int, int, float, LargeHashMap.KeyAdapter)}
@@ -1063,9 +1066,9 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * <h4>Key adapters</h4> 
 	 * To enable 64-bit hash codes, the programmer may provide a 
 	 * <i>key adapter</i> class that implements
-	 * {@link LargeHashMap.KeyAdapter}{@code <K>} for the key type {@code K}.
-	 * For example, if it were necessary to use keys of type 
-	 * {@link java.math.BigInteger}:<pre><code>
+	 * {@link org.logicmill.util.LargeHashMap.KeyAdapter}{@code <K>} for the 
+	 * key type {@code K}. For example, if it were necessary to use keys of 
+	 * type {@link java.math.BigInteger}:<pre><code>
 	 * ConcurrentLargeHashMap&lt;BigInteger, String&gt; map = 
 	 * new ConcurrentLargeHashMap&lt;BigInteger, String&gt;(8192, 8, 0.8f, 
 	 * 	new LargeHashMap.KeyAdapter&lt;BigInteger&gt;() {
@@ -1101,7 +1104,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * @param keyAdapter adapter to generate 64-bit hash code values from keys,
 	 * or {@code null} to employ the default key adapter
 	 * 
-	 * @see LargeHashMap.KeyAdapter
+	 * @see org.logicmill.util.LargeHashMap.KeyAdapter
 	 */
 	public ConcurrentLargeHashMap(int segSize, int initSegCount, float loadThreshold, 
 			LargeHashMap.KeyAdapter<K> keyAdapter) {
