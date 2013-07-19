@@ -13,7 +13,7 @@ used in discussions of hopscotch hashing: a set of map
 entries that share the same hash index within a segment, all located in close proximity 
 to that index in the segment's array structure. In addition to establishing a hierarchical structure, these 
 hashing techniques address different problems. Extendible hashing manages map growth; hopscotch 
-hashing resolves hash value collisions and distributes map entries in the underlying array for 
+hashing resolves collisions and distributes map entries in the underlying array for 
 efficient retrieval.
 <h3>Concurrency</h3>
 All operations are thread-safe. Retrieval operations do not entail blocking; they 
@@ -52,19 +52,15 @@ directory. If a split forces the directory to expand, the updating thread
 keeps the directory locked during expansion. A directory lock will not block 
 a concurrent update unless that update forces a segment split.
 <h3>Hopscotch Hashing</h3>
-This implementation uses Hopscotch hashing  
-within segments for conflict resolution. Hopscotch hashing is similar to 
+This implementation uses Hopscotch hashing
+within segments for collision resolution. Hopscotch hashing is similar to 
 linear probing, except that colliding map entries all reside in relatively 
-close proximity to each other, resulting 
+close proximity to each other, resulting
 in shorter searches and improved cache hit rates. Hopscotch hashing also 
 yields good performance at load factors as high as 0.9.<p> 
 At present, the hop range (longest distance from the hash index that
 a collision can be stored) is set at 32, and the maximum search range
-for an empty slot during an add operation is 512. If a put operation
-fails because no empty slots are available in search range, or because 
-hopping fails to free up a slot within hop range, the segment is split 
-regardless of its current load factor. Such insertion failure splits 
-typically don't occur unless the load factor exceeds 0.9.<p>
+for an empty slot during an add operation is 512.
 Hopscotch hashing was designed to support a high degree of concurrency, 
 including non-blocking retrieval. This implementation follows the 
 concurrency strategies described in the originating papers, with minor 
@@ -72,42 +68,32 @@ variations.
 <h3>Long Hash Codes</h3>
 ConcurrentLargeHashMap is designed to support hash maps that can expand to very 
 large size (> 2<sup>32</sup> items). To that end, it uses 64-bit hash codes.
+Lacking a universally available 64-bit cognate of `Object.hashCode()`, this project
+defines two alternatives for producing 64-bit hash codes from objects.
+If circumstances permit, a class to be used as a key may directly implement
+the `org.logicmill.util.LargeHashable`interface. In cases where it is not practical or possible to modify or
+extend the key class directly, this project relies on *key adapters*&mdash;helper classes
+that compute long hash codes for specific key types. Key adapters can often be implemented
+concisely with anonymous classes, provided when the map is constructed. Keys of
+type `CharSequence` (which includes keys of type `String`) or `byte[]` can be used without a
+key adapter.
+<h4>SpookyHash</h4>
 Because array indices within a segment consist of bit fields
 extracted directly from hash code values, it is important to choose a hash 
 function that reliably exhibits avalanche and uniform distribution. 
-<h4>SpookyHash</h4>
 An implementation of Bob Jenkins' SpookyHash V2<a href="#footnote-4"><sup>[4]</sup></a> 
-algorithm is included in this project, and is highly recommended. 
-<h4>Key adapters</h4>
-Lacking a universally available 64-bit cognate of `Object.hashCode()`,
-some generalized means for obtaining 64-bit hash codes from keys must be
-provided. <i>Key adapters</i> are helper classes that compute 64-bit hash 
-codes for specific key types, allowing a class to be used as a key when it 
-is not practical or possible to modify or extend the key class itself. Key
-adapters implement the interface 
-`org.logicmill.util.LargeHashMap.KeyAdapter``<K>`.
-The map constructor accepts a key adapter as a parameter, causing that
-adapter to be used by the map to obtain hash codes from keys. See
-`ConcurrentLargeHashMap(int, int, float, LargeHashMap.KeyAdapter)`
-for details and an example key adapter.
-<h4>Default key adapter</h4> 
-If the key class implementation permits, it can provide a 64-bit hash code
-directly by implementing the `LongHashable` interface. When the map
-is constructed with a `null` key adapter, it uses a default key adapter 
-implementation that will attempt to cast a key to `LongHashable` and 
-obtain a 64-bit hash code by invoking `key.getLongHashCode()`. The 
-default key adapter also handles keys of types `String` and 
-`byte[]` without requiring a programmer-supplied key adapter. See
-`ConcurrentLargeHashMap(int, int, float, LargeHashMap.KeyAdapter)` for a
-detailed discussion of the default key adapter.
-<p id="footnote-1">[1] <a href="http://dx.doi.org/10.1145%2F320083.320092"> Fagin, et al, 
+algorithm is included in this project, and is highly recommended. The performance
+of SpookyHash, with respect to both speed and the statistical properties of 
+the resulting hash codes, campares favorably among
+hashing algorithms that produce 64- or 128-bit results.
+<p id="footnote-1"><sup>[1]</sup> <a href="http://dx.doi.org/10.1145%2F320083.320092"> Fagin, et al, 
 "Extendible Hashing - A Fast Access Method for Dynamic Files", 
 ACM TODS Vol. 4 No. 3, Sept. 1979</a></p>
-<p id="footnote-2">[2] <a href="http://dl.acm.org/citation.cfm?id=588072">
+<p id="footnote-2"><sup>[2]</sup> <a href="http://dl.acm.org/citation.cfm?id=588072">
 Ellis, "Extendible Hashing for Concurrent Operations and Distributed Data", 
 PODS 1983</a></p>
-<p id="footnote-3">[3] 
+<p id="footnote-3"><sup>[3]</sup> 
 <a href="http://mcg.cs.tau.ac.il/papers/disc2008-hopscotch.pdf">
 Herlihy, et al, "Hopscotch Hashing", DISC 2008</a>.</p>
-<p id="footnote-4">[4]
-<a href="http://burtleburtle.net/bob/hash/spooky.html">http://burtleburtle.net/bob/hash/spooky.html</a>
+<p id="footnote-4"><sup>[4]</sup> <a href="http://burtleburtle.net/bob/hash/spooky.html">
+http://burtleburtle.net/bob/hash/spooky.html</a>
