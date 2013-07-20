@@ -13,16 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.logicmill.util;
+package org.logicmill.util.concurrent;
 
-import org.logicmill.util.ConExtHopsHashMapProbe.SegmentProbe;
+import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
 
-/**Thrown by {@link ConExtHopsHashMapAuditor#verifyMapIntegrity(boolean, int)} 
+/**Thrown by {@link ConcurrentLargeHashMapAuditor#verifyMapIntegrity(boolean, int)} 
  * to indicate internal disagreement regarding the number of entries in a 
  * segment. Each segment maintains an explicit entry count, incrementing on 
  * successful put operations and decrementing on successful remove operations. 
  * The integrity check counts entries reachable in bucket lists, and non-null 
- * entry references in the {@code ConExtHopsHashMap.Segment.entries} array. 
+ * entry references in the {@code ConcurrentLargeHashMap.Segment.entries} array. 
  * All three counts should agree.
  * @author David Curtis
  *

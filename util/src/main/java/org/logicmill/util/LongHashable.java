@@ -15,7 +15,8 @@
  */
 package org.logicmill.util;
 
-/** An object that can return a 64-bit hash code, implemented by classes used as keys in {@link LargeHashMap}{@code <K,V >}.
+/** An object that can return a 64-bit hash code, implemented by classes used 
+ * as keys in {@link LargeHashMap}{@code <K,V >}.
  * @author David Curtis
  *
  */

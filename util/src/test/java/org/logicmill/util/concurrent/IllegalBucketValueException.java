@@ -13,13 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.logicmill.util;
+package org.logicmill.util.concurrent;
 
-import org.logicmill.util.ConExtHopsHashMapProbe.SegmentProbe;
+import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
 
-/** Thrown by {@link ConExtHopsHashMapAuditor#verifyMapIntegrity(boolean, int)}
+/** Thrown by {@link ConcurrentLargeHashMapAuditor#verifyMapIntegrity(boolean, int)}
  * to indicate that an illegal value was encountered in the 
- * {@code ConExtHopsHashMap.Segment.buckets} array.
+ * {@code ConcurrentLargeHashMap.Segment.buckets} array.
  * Legal bucket values include only {@code NULL_OFFSET} (-1) and integers 
  * between 0 (inclusive) and {@code HOP_RANGE} (32, exclusive).
  * @author David Curtis

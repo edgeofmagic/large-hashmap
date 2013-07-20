@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.logicmill.util;
+package org.logicmill.util.concurrent;
 
 import java.util.BitSet;
 import java.util.Iterator;
@@ -23,15 +23,18 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.logicmill.util.LargeHashMap;
+import org.logicmill.util.LargeHashMap.Entry;
+
 
 /** A reflection-based test probe for inspecting the internal data structures 
- * of an instance of ConExtHopsHashMap. The bulk of the workload is delegated
+ * of an instance of ConcurrentLargeHashMap. The bulk of the workload is delegated
  * to the nested class {@code SegmentProbe}.
  * 
  * @author David Curtis
  *
  */
-public class ConExtHopsHashMapProbe {
+public class ConcurrentLargeHashMapProbe {
 	
 	/** A wrapper for exceptions thrown within the probe implementation.
 	 * The possible causal exceptions include {@code SecurityException}, 
@@ -57,7 +60,7 @@ public class ConExtHopsHashMapProbe {
 	}
 	
 	/** A reflection-based probe for inspecting the internal data structures of
-	 * an instance of {@code ConExtHopsHashMap.Segment}.
+	 * an instance of {@code ConcurrentLargeHashMap.Segment}.
 	 * @author David Curtis
 	 *
 	 */
@@ -316,8 +319,8 @@ public class ConExtHopsHashMapProbe {
 		/** Returns the map probe object to which this segment probe belongs.
 		 * @return reference to the map probe object for this segment probe
 		 */
-		public ConExtHopsHashMapProbe getMapProbe() {
-			return ConExtHopsHashMapProbe.this;
+		public ConcurrentLargeHashMapProbe getMapProbe() {
+			return ConcurrentLargeHashMapProbe.this;
 		}
 		
 		/** Returns a long value containing set bits that correspond to entries
@@ -532,7 +535,7 @@ public class ConExtHopsHashMapProbe {
 	
 	
 	@SuppressWarnings({ "unchecked"})
-	ConExtHopsHashMapProbe(Object map) throws ProbeInternalException {
+	ConcurrentLargeHashMapProbe(Object map) throws ProbeInternalException {
 		this.map = map;
 		try {
 			NULL_OFFSET = ReflectionProbe.getIntField(map, "NULL_OFFSET");

@@ -13,11 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.logicmill.util;
+package org.logicmill.util.concurrent;
 
-import org.logicmill.util.ConExtHopsHashMapProbe.SegmentProbe;
+import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
 
-/** Thrown by {@link ConExtHopsHashMapAuditor#verifyMapIntegrity(boolean, int)}
+/** Thrown by {@link ConcurrentLargeHashMapAuditor#verifyMapIntegrity(boolean, int)}
  * indicate that a bucket contained a null entry reference.
  * @author David Curtis
  *

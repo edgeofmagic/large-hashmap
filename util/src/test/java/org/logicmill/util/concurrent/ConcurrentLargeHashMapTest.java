@@ -1,4 +1,4 @@
-package org.logicmill.util;
+package org.logicmill.util.concurrent;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -38,9 +38,13 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.logicmill.util.LargeHashMap;
+import org.logicmill.util.LargeHashMap.Entry;
+import org.logicmill.util.LargeHashMap.KeyAdapter;
+import org.logicmill.util.concurrent.ConcurrentLargeHashMap;
 
 @SuppressWarnings("javadoc")
-public class ConExtHopsHashMapTest {
+public class ConcurrentLargeHashMapTest {
 	
 	private static String[] keys = new String[0];
 
@@ -80,10 +84,10 @@ public class ConExtHopsHashMapTest {
 	@SuppressWarnings("rawtypes")
 	/*
 	 * Performs a relatively exhaustive integrity check on the internal structure of the map.
-	 * See ConExtHashMapAuditor for more details.
+	 * See ConcurrentLargeHashMapAuditor for more details.
 	 */
-	private void checkMapIntegrity(ConExtHopsHashMap map) throws SegmentIntegrityException {
-        ConExtHopsHashMapAuditor auditor = new ConExtHopsHashMapAuditor(map);
+	private void checkMapIntegrity(ConcurrentLargeHashMap map) throws SegmentIntegrityException {
+        ConcurrentLargeHashMapAuditor auditor = new ConcurrentLargeHashMapAuditor(map);
 		LinkedList<SegmentIntegrityException> exceptions = auditor.verifyMapIntegrity(false, 0);
 		Assert.assertEquals("map integrity exceptions found", 0, exceptions.size());		
 	}
@@ -111,7 +115,7 @@ public class ConExtHopsHashMapTest {
 	 */
 	@Test
 	public void testConcurrentPutRemoveGet8() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		testConcurrentPutRemoveGet(8, 1024, 10000000L, 4096, 8, 0.8f);
+		testConcurrentPutRemoveGet(8, 1024, 1000000L, 4096, 8, 0.8f);
 	}
 
 	/*
@@ -133,7 +137,7 @@ public class ConExtHopsHashMapTest {
 	 */
 	@Test
 	public void testRemoveValue() {
-		final ConExtHopsHashMap<String, Integer> map = new ConExtHopsHashMap<String, Integer>(1024, 2, 0.8f, 
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
 				new LargeHashMap.KeyAdapter<String>() {
 					public long getLongHashCode(String key) {
 						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
@@ -158,7 +162,7 @@ public class ConExtHopsHashMapTest {
 	 */
 	@Test
 	public void testContainsKeyAndRemove() {
-		final ConExtHopsHashMap<String, Integer> map = new ConExtHopsHashMap<String, Integer>(1024, 2, 0.8f, 
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
 				new LargeHashMap.KeyAdapter<String>() {
 					public long getLongHashCode(String key) {
 						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
@@ -179,7 +183,7 @@ public class ConExtHopsHashMapTest {
 	 */
 	@Test
 	public void testGet() {
-		final ConExtHopsHashMap<String, Integer> map = new ConExtHopsHashMap<String, Integer>(1024, 2, 0.8f, 
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
 				new LargeHashMap.KeyAdapter<String>() {
 					public long getLongHashCode(String key) {
 						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
@@ -202,7 +206,7 @@ public class ConExtHopsHashMapTest {
 	 */
 	@Test
 	public void testReplace() {
-		final ConExtHopsHashMap<String, Integer> map = new ConExtHopsHashMap<String, Integer>(1024, 2, 0.8f, 
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
 				new LargeHashMap.KeyAdapter<String>() {
 					public long getLongHashCode(String key) {
 						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
@@ -235,7 +239,7 @@ public class ConExtHopsHashMapTest {
 	 */
 	@Test
 	public void testReplaceOldNew() {
-		final ConExtHopsHashMap<String, Integer> map = new ConExtHopsHashMap<String, Integer>(1024, 2, 0.8f, 
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
 				new LargeHashMap.KeyAdapter<String>() {
 					public long getLongHashCode(String key) {
 						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
@@ -269,7 +273,7 @@ public class ConExtHopsHashMapTest {
 	 */
 	@Test
 	public void testPutIfAbsent() {
-		final ConExtHopsHashMap<String, Integer> map = new ConExtHopsHashMap<String, Integer>(1024, 2, 0.8f, 
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
 				new LargeHashMap.KeyAdapter<String>() {
 					public long getLongHashCode(String key) {
 						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
@@ -296,7 +300,7 @@ public class ConExtHopsHashMapTest {
 	 */
 	@Test
 	public void testKeyIterator() {
-		final ConExtHopsHashMap<String, Integer> map = new ConExtHopsHashMap<String, Integer>(4096, 8, 0.8f, 
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(4096, 8, 0.8f, 
 				new LargeHashMap.KeyAdapter<String>() {
 					public long getLongHashCode(String key) {
 						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
@@ -323,7 +327,7 @@ public class ConExtHopsHashMapTest {
 	 */
 	@Test
 	public void testEntryIterator() {
-		final ConExtHopsHashMap<String, Integer> map = new ConExtHopsHashMap<String, Integer>(4096, 8, 0.8f, 
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(4096, 8, 0.8f, 
 				new LargeHashMap.KeyAdapter<String>() {
 					public long getLongHashCode(String key) {
 						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
@@ -360,7 +364,7 @@ public class ConExtHopsHashMapTest {
 	 */
 	@Test
 	public void testValueIterator() {
-		final ConExtHopsHashMap<String, Integer> map = new ConExtHopsHashMap<String, Integer>(4096, 8, 0.8f, 
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(4096, 8, 0.8f, 
 				new LargeHashMap.KeyAdapter<String>() {
 					public long getLongHashCode(String key) {
 						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
@@ -420,7 +424,7 @@ public class ConExtHopsHashMapTest {
 			final int segSize, final int segCount, final float loadFactor)
 			throws SegmentIntegrityException, InterruptedException, ExecutionException {
 		
-		final ConExtHopsHashMap<String, Integer> map = new ConExtHopsHashMap<String, Integer>(segSize, segCount, loadFactor, 
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(segSize, segCount, loadFactor, 
 				new LargeHashMap.KeyAdapter<String>() {
 					public long getLongHashCode(String key) {
 						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
@@ -529,12 +533,12 @@ public class ConExtHopsHashMapTest {
 	
 	@Test
 	public void testConcurrentGet4() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		testConcurrentGet(4, 50000000L, 8192, 4, 0.8f);
+		testConcurrentGet(4, 5000000L, 8192, 4, 0.8f);
 	}
 	
 	private void testConcurrentGet(int threadCount, final long getLimit, int segSize, int segCount, float loadFactor)
 			throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		final ConExtHopsHashMap<String, Integer> map = new ConExtHopsHashMap<String, Integer>(segSize, segCount, loadFactor, 
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(segSize, segCount, loadFactor, 
 				new LargeHashMap.KeyAdapter<String>() {
 					public long getLongHashCode(String key) {
 						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
@@ -597,7 +601,7 @@ public class ConExtHopsHashMapTest {
 	private void testConcurrentPut(int threadCount, int segSize, int segCount, float loadFactor)
 			throws SegmentIntegrityException, InterruptedException, ExecutionException {
 	
-		final ConExtHopsHashMap<String, Integer> map = new ConExtHopsHashMap<String, Integer>(segSize, segCount, loadFactor, 
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(segSize, segCount, loadFactor, 
 			new LargeHashMap.KeyAdapter<String>() {
 				public long getLongHashCode(String key) {
 					return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
@@ -659,7 +663,7 @@ public class ConExtHopsHashMapTest {
 	 */
 	private void testConcurrentPutRemoveIterator(int threadCount, int notInMapCount, int segSize, int segCount, float loadFactor) 
 	throws InterruptedException, ExecutionException, SegmentIntegrityException {
-		final ConExtHopsHashMap<String, Integer> map = new ConExtHopsHashMap<String, Integer>(segSize, segCount, loadFactor, 
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(segSize, segCount, loadFactor, 
 				new LargeHashMap.KeyAdapter<String>() {
 					public long getLongHashCode(String key) {
 						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);

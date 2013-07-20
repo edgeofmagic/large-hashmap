@@ -13,38 +13,36 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.logicmill.util;
+package org.logicmill.util.concurrent;
 
 import java.util.Iterator;
 
-import org.logicmill.util.ConExtHopsHashMapProbe.SegmentProbe;
+import org.logicmill.util.concurrent.ConcurrentLargeHashMap;
+import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
 
 
-/** A support class for {@link ConExtHopsHashMap} that performs integrity
- * checking and reports details of the map's internal structure. To apply
- * this class to a map instance, pass a reference to that instance to the 
- * manager's constructor:
+/** A utility associated with {@link ConcurrentLargeHashMap} that collects
+ * and reports performance-related statistics about a map's internal structure,
+ * focusing particularly on bucket structure. 
+ * To apply this class to a map instance, construct an inspector object with
+ * a reference to the map instance:
  * <pre><code>
- * ConExtHopsHashMap&lt;Key,Value&gt; map = new ConExtHopsHashMap&lt;Key,Value&gt;(1024, 8, 0.8F);
- * ConExtHopsHashMapManager manager = new ConExtHopsHashMapManager(map);
+ * ConcurrentLargeHashMap&lt;Key,Value&gt; map = new ConcurrentLargeHashMap&lt;Key,Value&gt;(1024, 8, 0.8F);
+ * ConcurrentLargeHashMapInspector inspector = new ConcurrentLargeHashMapInspector(map);
  * ...
- * manager.integrityCheck(true, 0);
  * </code></pre>
- * This class contains
- * exceptions as nested classes. Instances of these exception classes may
- * by thrown by {@link #verifySegmentIntegrity(boolean, int)}, or may be returned
- * in a list, depending on parameter values for the invocation of 
- * {@code integrityCheck()}.<p>
- * Metrics
+ * 
+ * @TODO finish javadoc
+ * 
  * @author David Curtis
  *
  */
-public class ConExtHopsHashMapInspector {
+public class ConcurrentLargeHashMapInspector {
 	
-	private final ConExtHopsHashMapProbe mapProbe;
+	private final ConcurrentLargeHashMapProbe mapProbe;
 
-	public ConExtHopsHashMapInspector(ConExtHopsHashMap map) {
-		mapProbe = new ConExtHopsHashMapProbe(map);
+	public ConcurrentLargeHashMapInspector(ConcurrentLargeHashMap map) {
+		mapProbe = new ConcurrentLargeHashMapProbe(map);
 	}
 	
 	public MapBucketAssay assayMap() {

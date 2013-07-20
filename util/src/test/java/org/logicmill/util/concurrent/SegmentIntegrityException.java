@@ -13,12 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.logicmill.util;
+package org.logicmill.util.concurrent;
 
-import org.logicmill.util.ConExtHopsHashMapProbe.SegmentProbe;
+import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
 
 /** An abstract base class for exceptions thrown by 
- * {@link ConExtHopsHashMapAuditor#verifyMapIntegrity(boolean, int)},
+ * {@link ConcurrentLargeHashMapAuditor#verifyMapIntegrity(boolean, int)},
  * to indicate detection of a structural anomaly. SegmentIntegrityException 
  * encapsulates identification of the segment in which the anomaly was observed
  * (common to all subclasses).

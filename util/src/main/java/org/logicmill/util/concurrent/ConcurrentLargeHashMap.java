@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.logicmill.util;
+package org.logicmill.util.concurrent;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
@@ -25,14 +25,12 @@ import java.util.BitSet;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
+import org.logicmill.util.LargeHashMap;
+import org.logicmill.util.LongHashable;
 import org.logicmill.util.hash.SpookyHash64;
 
 /** 
  * A concurrent hash map that scales well to large data sets.
- * The name <i>ConExtHopsHashMap</i> is an elision of <i>Concurrent</i>, 
- * <i>Extendible</i>, <i>Hopscotch</i>, and <i>HashMap</i>. As such, it 
- * identifies important properties and elements of this  hash map 
- * implementation. 
  * <h3>Concurrency</h3>
  * All operations are thread-safe. Retrieval operations ({@code get}, 
  * {@code containsKey}, and iterator traversal) do not entail locking; they 
@@ -88,7 +86,7 @@ import org.logicmill.util.hash.SpookyHash64;
  * concurrency strategies described in the originating papers, with minor 
  * variations.
  * <h3>Long Hash Codes</h3>
- * ConExtHopsHashMap is designed to support hash maps that can expand to very 
+ * ConcurrentLargeHashMap is designed to support hash maps that can expand to very 
  * large size (> 2<sup>32</sup> items). To that end, it uses 64-bit hash codes.
  * <h4>Hash function requirements</h4>
  * Because segment size is a power of 2, segment indices consist of bit fields
@@ -97,17 +95,18 @@ import org.logicmill.util.hash.SpookyHash64;
  * implementation of Bob Jenkins' SpookyHash V2 algorithm 
  * ({@link org.logicmill.util.hash.SpookyHash} and 
  * {@link org.logicmill.util.hash.SpookyHash64}) is available in conjunction 
- * with ConExtHopsHashMap, and is highly recommended.
+ * with ConcurrentLargeHashMap, and is highly recommended.
  * <h4>Key adapters</h4>
  * Lacking a universally available 64-bit cognate of {@code Object.hashCode()},
  * some generalized means for obtaining 64-bit hash codes from keys must be
  * provided. <i>Key adapters</i> are helper classes that compute 64-bit hash 
  * codes for specific key types, allowing a class to be used as a key when it 
  * is not practical or possible to modify or extend the key class itself. Key
- * adapters implement the interface {@link LargeHashMap.KeyAdapter}{@code <K>}.
+ * adapters implement the interface 
+ * {@link org.logicmill.util.LargeHashMap.KeyAdapter}{@code <K>}.
  * The map constructor accepts a key adapter as a parameter, causing that
  * adapter to be used by the map to obtain hash codes from keys. See
- * {@link #ConExtHopsHashMap(int, int, float, LargeHashMap.KeyAdapter)}
+ * {@link #ConcurrentLargeHashMap(int, int, float, LargeHashMap.KeyAdapter)}
  * for details and an example key adapter.
  * <h4>Default key adapter</h4> 
  * If the key class implementation permits, it can provide a 64-bit hash code
@@ -117,7 +116,7 @@ import org.logicmill.util.hash.SpookyHash64;
  * obtain a 64-bit hash code by invoking {@code key.getLongHashCode()}. The 
  * default key adapter also handles keys of types {@code String} and 
  * {@code byte[]} without requiring a programmer-supplied key adapter. See
- * {@link #ConExtHopsHashMap(int, int, float, LargeHashMap.KeyAdapter)} for a
+ * {@link #ConcurrentLargeHashMap(int, int, float, LargeHashMap.KeyAdapter)} for a
  * detailed discussion of the default key adapter.
  * <p id="footnote-1">[1] See 
  * <a href="http://dx.doi.org/10.1145%2F320083.320092"> Fagin, et al, 
@@ -127,7 +126,7 @@ import org.logicmill.util.hash.SpookyHash64;
  * <p id="footnote-2">[2] <a href="http://dl.acm.org/citation.cfm?id=588072">
  * Ellis, "Extendible Hashing for Concurrent Operations and Distributed Data", 
  * PODS 1983</a> describes strategies for concurrent operations on extendible 
- * hash tables. The strategy used in ConExtHopsHashMap is informed
+ * hash tables. The strategy used in ConcurrentLargeHashMap is informed
  * by this paper, but does not follow it precisely.</p>
  * <p id="footnote-3">[3] 
  * <a href="http://mcg.cs.tau.ac.il/papers/disc2008-hopscotch.pdf">
@@ -142,7 +141,7 @@ import org.logicmill.util.hash.SpookyHash64;
  * @param <K> type of keys stored in the map
  * @param <V> type of values stored in the map
  */
-public class ConExtHopsHashMap<K, V> implements LargeHashMap<K, V> {
+public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	
 	/*
 	 * Default entry implementation, stores hash codes to avoid repeatedly 
@@ -176,9 +175,9 @@ public class ConExtHopsHashMap<K, V> implements LargeHashMap<K, V> {
 		@Override
 		public boolean equals(Object obj
 				)  {
-			if (obj instanceof ConExtHopsHashMap.Entry<?,?>) {
+			if (obj instanceof ConcurrentLargeHashMap.Entry<?,?>) {
 				@SuppressWarnings("unchecked")
-				ConExtHopsHashMap.Entry<K, V> other = (ConExtHopsHashMap.Entry<K,V>) obj;
+				ConcurrentLargeHashMap.Entry<K, V> other = (ConcurrentLargeHashMap.Entry<K,V>) obj;
 				return (this.hashCode == other.hashCode) 
 						&& this.key.equals(other.key) 
 						&& this.value.equals(other.value);
@@ -264,7 +263,7 @@ public class ConExtHopsHashMap<K, V> implements LargeHashMap<K, V> {
 		
 		/*
 		 * For annotation only, not operationally significant. Accessed by
-		 * ConExtHopsHashMapProbe.SegmentProbe, with reflection, so there
+		 * ConcurrentLargeHashMapProbe.SegmentProbe, with reflection, so there
 		 * is no local use of this private field.
 		 */
 		@SuppressWarnings("unused")
@@ -309,7 +308,7 @@ public class ConExtHopsHashMap<K, V> implements LargeHashMap<K, V> {
 		
 		/*
 		 * Accumulated concurrency event metrics, for reporting by
-		 * ConExtHopsHashMapInspector (the which see for a detailed 
+		 * ConcurrentLargeHashMapInspector (the which see for a detailed 
 		 * discussion of these values).
 		 */	
 		private final AtomicLong readRetrys;
@@ -372,7 +371,7 @@ public class ConExtHopsHashMap<K, V> implements LargeHashMap<K, V> {
 		 */
 		@SuppressWarnings("unchecked")
 		private Segment[] split() {
-			Segment[] splitPair = new ConExtHopsHashMap.Segment[2];
+			Segment[] splitPair = new ConcurrentLargeHashMap.Segment[2];
 			int  newLocalDepth = localDepth + 1;
 			int newSharedBitMask = 1 << localDepth;
 			splitPair[0] = new Segment(newLocalDepth, sharedBits);
@@ -1067,14 +1066,14 @@ public class ConExtHopsHashMap<K, V> implements LargeHashMap<K, V> {
 	 * <h4>Key adapters</h4> 
 	 * To enable 64-bit hash codes, the programmer may provide a 
 	 * <i>key adapter</i> class that implements
-	 * {@link LargeHashMap.KeyAdapter}{@code <K>} for the key type {@code K}.
-	 * For example, if it were necessary to use keys of type 
-	 * {@link java.math.BigInteger}:<pre><code>
-	 * ConExtHopsHashMap&lt;BigInteger, String&gt; map = 
-	 * new ConExtHopsHashMap&lt;BigInteger, String&gt;(8192, 8, 0.8f, 
+	 * {@link org.logicmill.util.LargeHashMap.KeyAdapter}{@code <K>} for the 
+	 * key type {@code K}. For example, if it were necessary to use keys of 
+	 * type {@link java.math.BigInteger}:<pre><code>
+	 * ConcurrentLargeHashMap&lt;BigInteger, String&gt; map = 
+	 * new ConcurrentLargeHashMap&lt;BigInteger, String&gt;(8192, 8, 0.8f, 
 	 * 	new LargeHashMap.KeyAdapter&lt;BigInteger&gt;() {
 	 * 		public long getHashCode(BigInteger key) {
-	 * 			return org.logicmill.spookyhash.SpookyHash64.hash(key.toByteArray, 0L);
+	 * 			return org.logicmill.util.hash.SpookyHash64.hash(key.toByteArray, 0L);
 	 *		}
 	 *	}
 	 * );</code></pre>
@@ -1105,9 +1104,9 @@ public class ConExtHopsHashMap<K, V> implements LargeHashMap<K, V> {
 	 * @param keyAdapter adapter to generate 64-bit hash code values from keys,
 	 * or {@code null} to employ the default key adapter
 	 * 
-	 * @see LargeHashMap.KeyAdapter
+	 * @see org.logicmill.util.LargeHashMap.KeyAdapter
 	 */
-	public ConExtHopsHashMap(int segSize, int initSegCount, float loadThreshold, 
+	public ConcurrentLargeHashMap(int segSize, int initSegCount, float loadThreshold, 
 			LargeHashMap.KeyAdapter<K> keyAdapter) {
 					
 		segSize = nextPowerOfTwo(segSize);		
@@ -1357,7 +1356,7 @@ public class ConExtHopsHashMap<K, V> implements LargeHashMap<K, V> {
 		BitSet markedSegments;
 
 		private SegmentIterator() {
-			dir = ConExtHopsHashMap.this.directory.get();
+			dir = ConcurrentLargeHashMap.this.directory.get();
 			dirSize = dir.length();
 			markedSegments = new BitSet(dirSize);
 			nextSegmentIndex = 0;
