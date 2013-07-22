@@ -21,25 +21,36 @@ import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import org.logicmill.util.LargeHashMap;
-import org.logicmill.util.LargeHashMap.Entry;
 import org.logicmill.util.concurrent.ConcurrentLargeHashMap;
 import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.ProbeInternalException;
 import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
 
 /** An object that verifies the integrity of an instance of 
- * {@link ConcurrentLargeHashMap}. This class uses {@link ConcurrentLargeHashMapProbe}
+ * {@link ConcurrentLargeHashMap}. This class uses 
+ * {@link ConcurrentLargeHashMapProbe}
  * to gain access to private members of {@code ConcurrentLargeHashMap}.
  * 
- * The auditor can be used on the map in its entirety:<pre><code>
+ * To audit an instance of {@code ConcurrentLargeHashMap}:<pre><code>
  * ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap( ... );
  * ConcurrentLargeHashMapAuditor auditor = new ConcurrentLargeHashMapAuditor(map);
  * ...
- * auditor.verifyMapIntegrity(true, 0);
+ * try {
+ * 	auditor.verifyMapIntegrity(true, 0);
+ * } catch (SegmentIntegrityException e) {
+ * 	...
+ * }
  * </code></pre>
- * or on individual segments:
  * 
- * @TODO finish javadoc
- * 
+ * @see SegmentIntegrityException
+ * @see BucketOrderException
+ * @see EntryCountException
+ * @see EntryNotReachableException
+ * @see IllegalBucketValueException
+ * @see IllegalOffsetValueException
+ * @see NullEntryInBucketException
+ * @see WrongBucketException
+ * @see WrongSegmentException
+ * @see ConcurrentLargeHashMapProbe
  * @author David Curtis
  *
  */
@@ -85,14 +96,12 @@ public class ConcurrentLargeHashMapAuditor {
 	}
 
 
-	public class SegmentAuditor {
+	private class SegmentAuditor {
 		
 		private final SegmentProbe segmentProbe;
-		private final ConcurrentLargeHashMapProbe mapProbe;
 
-		public SegmentAuditor(SegmentProbe segmentProbe) {
+		private SegmentAuditor(SegmentProbe segmentProbe) {
 			this.segmentProbe = segmentProbe;
-			mapProbe = segmentProbe.getMapProbe();
 		}
 				
 		private int wrapIndex(int unwrappedIndex) {
@@ -106,44 +115,7 @@ public class ConcurrentLargeHashMapAuditor {
 		boolean isBucketEmpty(int bucketIndex) {
 			return segmentProbe.getBuckets().get(bucketIndex) == NULL_OFFSET;
 		}
-		
-		private long getBucketMap(int bucketIndex) {
-			assert bucketIndex >= 0 && bucketIndex < segmentProbe.getBuckets().length();
-			long bucketMap = 0;
-			int oldTimeStamp, newTimeStamp = 0;
-			retry:
-			do {
-				bucketMap = 0;
-				oldTimeStamp = segmentProbe.getTimeStamps().get(bucketIndex);
-				int nextOffset = segmentProbe.getBuckets().get(bucketIndex);
-				if (nextOffset == NULL_OFFSET) {
-					return 0L;
-				}
-				while (nextOffset != NULL_OFFSET) {
-					int nextIndex = wrapIndex(bucketIndex + nextOffset);
-					@SuppressWarnings("rawtypes")
-					LargeHashMap.Entry entry = (LargeHashMap.Entry)segmentProbe.getEntries().get(nextIndex);
-					if (entry == null) {
-						/*
-						 * Concurrent update; try again.
-						 */
-						continue retry;
-					}
-					if (bucketIndex(segmentProbe.getEntryHashCode(entry)) != bucketIndex) {
-						/*
-						 * Concurrent update; try again.
-						 */
-						continue retry;
-					} else {
-						bucketMap |= 1 << nextOffset;
-					}
-					nextOffset = segmentProbe.getOffsets().get(nextIndex);
-				}
-				newTimeStamp = segmentProbe.getTimeStamps().get(bucketIndex);
-			} while (newTimeStamp != oldTimeStamp);
-			return bucketMap;
-		}
-		
+				
 		@SuppressWarnings("rawtypes")
 		private boolean bucketContainsEntry(int bucketIndex, LargeHashMap.Entry entry) {
 			int offset = segmentProbe.getBuckets().get(bucketIndex);
@@ -163,14 +135,7 @@ public class ConcurrentLargeHashMapAuditor {
 			return false;
 		}
 		
-		/**
-		 * @param throwImmediately
-		 * @param maxExceptions
-		 * @return
-		 * @throws ProbeInternalException
-		 * @throws SegmentIntegrityException
-		 */
-		public LinkedList<SegmentIntegrityException> verifySegmentIntegrity(boolean throwImmediately, int maxExceptions) 
+		private LinkedList<SegmentIntegrityException> verifySegmentIntegrity(boolean throwImmediately, int maxExceptions) 
 		throws ProbeInternalException, SegmentIntegrityException {	
 			ExceptionAccumulator exceptions = new ExceptionAccumulator(throwImmediately, maxExceptions);
 			int bucketEntryCount = 0;
@@ -248,28 +213,72 @@ public class ConcurrentLargeHashMapAuditor {
 		}
 	}
 	
-	private final ConcurrentLargeHashMap map;
 	private final ConcurrentLargeHashMapProbe mapProbe;
 	private final int NULL_OFFSET;
 	private final int HOP_RANGE;
-	private final boolean GATHER_METRICS;
 
-	public ConcurrentLargeHashMapAuditor(ConcurrentLargeHashMap map) {
-		this.map = map;
+	/**
+	 * @param map
+	 */
+	public ConcurrentLargeHashMapAuditor(ConcurrentLargeHashMap<?,?> map) {
 		mapProbe = new ConcurrentLargeHashMapProbe(map);
 		NULL_OFFSET = mapProbe.getNullOffset();
 		HOP_RANGE = mapProbe.getHopRange();
-		GATHER_METRICS = mapProbe.getGatherMetrics();
 	}
 	
+	
+	/** Performs an exhaustive examination of the internal data structures of 
+	 * an instance of {@code ConcurrentLargeHashMap}, to verify the map's
+	 * integrity. If the value of {@code throwImmediately} is {@code true},
+	 * this method will throw an exception upon encountering an error.
+	 * Otherwise ({@code throwImmediately} is {@code false}) this method will
+	 * return a list of exceptions that describe errors encountered
+	 * during the examination. If the value {@code maxExceptions} is greater
+	 * than zero, the examination will return at most {@code maxExceptions}
+	 * exceptions in the list. Otherwise ({@code maxExceptions <= 0}) this
+	 * method will return exceptions for all errors encountered in the map
+	 * inspection. If {@code throwImmediately} is {@code true}, the value
+	 * of {@code maxExceptions} is ignored.<p>
+	 * Each segment in the map is locked during the segment's examination.
+	 * In general, it is best to perform this operation when the 
+	 * map is quiescent. It can be used, however, concurrently with
+	 * operations on the map. Update operations on a segment will be blocked
+	 * during the segment's examination. Retrieval operations will not be
+	 * affected. 
+	 * @param throwImmediately if {@code true}, the first error encountered 
+	 * will cause an exception to be thrown; otherwise, exceptions will be 
+	 * accumulated and returned in a list
+	 * @param maxExceptions if {@code > 0}, limit on the number of exceptions 
+	 * returned in the resulting list; otherwise, no limit is imposed;
+	 * ignored if {@code throwImmediately} is {@code true}
+	 * @return list of exceptions describing encountered errors, if {@code
+	 * throwImmediately} is {@code false}
+	 * @throws BucketOrderException
+	 * @throws EntryCountException
+	 * @throws EntryNotReachableException
+	 * @throws IllegalBucketValueException
+	 * @throws IllegalOffsetValueException
+	 * @throws NullEntryInBucketException
+	 * @throws WrongBucketException
+	 * @throws WrongSegmentException
+	 * @throws ConcurrentLargeHashMapProbe
+	 */
+	@SuppressWarnings("javadoc")
 	public LinkedList<SegmentIntegrityException> verifyMapIntegrity(boolean throwImmediately, int maxExceptions) throws SegmentIntegrityException {
 		LinkedList<SegmentIntegrityException> exceptions = new LinkedList<SegmentIntegrityException>();
 		Iterator<SegmentProbe> segIter = mapProbe.getSegmentIterator();
 		while (segIter.hasNext()) {
 			SegmentProbe segProbe = segIter.next();
 			SegmentAuditor segAuditor = new SegmentAuditor(segProbe);
-			exceptions.addAll(segAuditor.verifySegmentIntegrity(throwImmediately, maxExceptions));
-			if (exceptions.size() >= maxExceptions) {
+			int currentExceptions = exceptions.size();
+			int segmentExceptionLimit;
+			if (maxExceptions > 0) {
+				segmentExceptionLimit = maxExceptions - currentExceptions;
+			} else {
+				segmentExceptionLimit = 0;
+			}
+			exceptions.addAll(segAuditor.verifySegmentIntegrity(throwImmediately, segmentExceptionLimit));
+			if (maxExceptions > 0 && exceptions.size() >= maxExceptions) {
 				return exceptions;
 			}
 		}

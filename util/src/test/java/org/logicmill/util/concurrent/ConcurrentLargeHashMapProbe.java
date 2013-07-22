@@ -24,10 +24,8 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.logicmill.util.LargeHashMap;
-import org.logicmill.util.LargeHashMap.Entry;
 
-
-/** A reflection-based test probe for inspecting the internal data structures 
+/** A reflection-based test probe for accessing the internal data structures 
  * of an instance of ConcurrentLargeHashMap. The bulk of the workload is delegated
  * to the nested class {@code SegmentProbe}.
  * 
@@ -417,31 +415,15 @@ public class ConcurrentLargeHashMapProbe {
 	}
 	
 	/** An iterator over segments in the map associated with this probe object.
-	 * The iterator guarantees that each segment is returned at most once, and that 
-	 * the set of segments returned by the iterator will not contain overlapping 
-	 * entry sets. Consider the following situation: A map directory has 4 elements,
-	 * with the following mapping to segments A, B and C.
-	 * <pre>
-	 * directory[0] = A
-	 * directory[1] = B
-	 * directory[2] = A
-	 * dierctory[3] = C
-	 *  </pre>
-	 * A segment iterator is created, 
-	 * and next() is called twice, returning A and B. Concurrently, an insertion
-	 * into A causes it to be split into A0 and A1. Now the directory looks like
-	 * this:
-	 * <pre>
-	 * directory[0] = A0
-	 * directory[1] = B
-	 * directory[2] = A1
-	 * directory[3] = C
-	 * </pre>
-	 * such that the contents of A (already seen through the segment iterator)
-	 * were split between A0 and A1. If the iterator returns A1, some elements in A1
-	 * will be seen twice. This iterator implementation avoids this problem by
-	 * marking (in a bit map) all indices occupied by any segment reference 
-	 * returned by next() on the iterator.
+	 * Segments are represented by, and made visible through, {@link 
+	 * SegmentProbe} proxy objects. The iterator guarantees that each segment 
+	 * is exposed through a probe returned by {@code next()} at most once, and that 
+	 * the set of segments exposed by the iterator will not contain overlapping 
+	 * entry sets. The set of segments exposed by {@code next()} will contain
+	 * all of the entries that are in the map at the time the iterator is
+	 * created, and are not removed before the iterator is exhausted.
+	 * A map entry will appear in at most one segment exposed by {@code 
+	 * next()}.
 	 * @author David Curtis
 	 *
 	 */
@@ -489,7 +471,7 @@ public class ConcurrentLargeHashMapProbe {
 		}
 
 
-		/** Returns true if more SegmentProbe object are available.
+		/** Returns true if more SegmentProbe objects are available.
 		 * @return true if iterator is not exhausted
 		 */
 		@Override
@@ -533,9 +515,15 @@ public class ConcurrentLargeHashMapProbe {
 	private final AtomicInteger forcedSplitCount;
 	private final AtomicInteger thresholdSplitCount;
 	
-	
+	/**
+	 * Creates a new probe object for the specified hash map.
+	 * @param map instance of {@code ConcurrentLargeHashMap} associated with 
+	 * this probe
+	 * @throws ProbeInternalException if creation failed due to
+	 * an internal error
+	 */
 	@SuppressWarnings({ "unchecked"})
-	ConcurrentLargeHashMapProbe(Object map) throws ProbeInternalException {
+	public ConcurrentLargeHashMapProbe(Object map) throws ProbeInternalException {
 		this.map = map;
 		try {
 			NULL_OFFSET = ReflectionProbe.getIntField(map, "NULL_OFFSET");
