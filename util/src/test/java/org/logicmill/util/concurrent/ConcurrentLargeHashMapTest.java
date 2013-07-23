@@ -39,6 +39,7 @@ import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.logicmill.util.LargeHashMap;
+import org.logicmill.util.LongHashable;
 import org.logicmill.util.concurrent.ConcurrentLargeHashMap;
 
 @SuppressWarnings("javadoc")
@@ -130,6 +131,72 @@ public class ConcurrentLargeHashMapTest {
 	 * *****************************************************
 	 */
 	
+	@Test
+	public void testDefaultKeyAdapterString() throws SegmentIntegrityException {
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, null);
+		for (int i = 0; i < keys.length; i++) {
+			map.putIfAbsent(keys[i], new Integer(i));
+		}
+        checkMapIntegrity(map);	
+	}
+	
+	@Test
+	public void testDefaultKeyAdapterBytes() throws SegmentIntegrityException {
+		final ConcurrentLargeHashMap<byte[], Integer> map = new ConcurrentLargeHashMap<byte[], Integer>(1024, 2, 0.8f, null);
+		for (int i = 0; i < keys.length; i++) {
+			map.putIfAbsent(keys[i].getBytes(), new Integer(i));
+		}
+        System.out.printf("byte[] test map size %d%n", map.size());
+		for (int i = 0; i < keys.length; i++) {
+			Integer n = map.get(keys[i].getBytes());
+			Assert.assertNotNull(n);
+			Assert.assertEquals(i, n.intValue());
+		}
+        checkMapIntegrity(map);
+	}
+	
+	
+	public class LongHashableString implements LongHashable {
+		
+		private final String string;
+		
+		public LongHashableString(String s) {
+			string = s;
+		}
+
+		@Override
+		public long getLongHashCode() {
+			return org.logicmill.util.hash.SpookyHash64.hash(string, 0L);
+		}
+		
+		@Override
+		public boolean equals(Object obj) {
+			if (obj instanceof LongHashableString) {
+				LongHashableString other = (LongHashableString) obj;
+				return this.string.equals(other.string);
+			} else {
+				return false;
+			}
+
+		}
+		
+	}
+	
+	@Test
+	public void testDefaultKeyAdapterLongHashable() throws SegmentIntegrityException {
+		final ConcurrentLargeHashMap<LongHashableString, Integer> map = 
+				new ConcurrentLargeHashMap<LongHashableString, Integer>(1024, 2, 0.8f, null);
+		for (int i = 0; i < keys.length; i++) {
+			map.putIfAbsent(new LongHashableString(keys[i]), new Integer(i));
+		}
+		for (int i = 0; i < keys.length; i++) {
+			Integer n = map.get(new LongHashableString(keys[i]));
+			Assert.assertNotNull(n);
+			Assert.assertEquals(i, n.intValue());
+		}
+        checkMapIntegrity(map);	
+	}
+
 	/*
 	 * Confirms that remove(key, value) only removes the entry if the key maps to the specificed value.
 	 */
