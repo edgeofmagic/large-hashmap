@@ -1,3 +1,5 @@
+Concurrent Large Hash Map
+=========================
 A scalable, concurrent hash map implementation incorporating extendible 
 hashing<a href="#footnote-1"><sup>[1]</sup></a> and 
 hopscotch hashing<a href="#footnote-3"><sup>[3]</sup></a>. These two techniques are employed 
