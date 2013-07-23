@@ -74,7 +74,7 @@ the `org.logicmill.util.LargeHashable`interface. In cases where it is not practi
 extend the key class directly, this project relies on *key adapters*&mdash;helper classes
 that compute long hash codes for specific key types. Key adapters can often be implemented
 concisely with anonymous classes, provided when the map is constructed. Keys of
-type `CharSequence` (which includes keys of type `String`) or `byte[]` can be used without a
+type `CharSequence` (which includes keys of type `String`) can be used without a
 key adapter.
 <h4>SpookyHash</h4>
 Because array indices within a segment consist of bit fields

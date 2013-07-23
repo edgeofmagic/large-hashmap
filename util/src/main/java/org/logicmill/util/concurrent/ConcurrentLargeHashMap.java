@@ -114,10 +114,11 @@ import org.logicmill.util.hash.SpookyHash64;
  * is constructed with a {@code null} key adapter, it uses a default key adapter 
  * implementation that will attempt to cast a key to {@code LongHashable} and 
  * obtain a 64-bit hash code by invoking {@code key.getLongHashCode()}. The 
- * default key adapter also handles keys of types {@code String} and 
- * {@code byte[]} without requiring a programmer-supplied key adapter. See
- * {@link #ConcurrentLargeHashMap(int, int, float, LargeHashMap.KeyAdapter)} for a
- * detailed discussion of the default key adapter.
+ * default key adapter also handles keys of type {@code CharacterSequence} 
+ * (a superclass of {@code String}) without requiring a programmer-supplied 
+ * key adapter. See
+ * {@link #ConcurrentLargeHashMap(int, int, float, LargeHashMap.KeyAdapter)} 
+ * for a detailed discussion of the default key adapter.
  * <p id="footnote-1">[1] See 
  * <a href="http://dx.doi.org/10.1145%2F320083.320092"> Fagin, et al, 
  * "Extendible Hashing - A Fast Access Method for Dynamic Files", 
@@ -171,21 +172,6 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		private long getHashCode() {
 			return hashCode;
 		}
-		
-		@Override
-		public boolean equals(Object obj
-				)  {
-			if (obj instanceof ConcurrentLargeHashMap.Entry<?,?>) {
-				@SuppressWarnings("unchecked")
-				ConcurrentLargeHashMap.Entry<K, V> other = (ConcurrentLargeHashMap.Entry<K,V>) obj;
-				return (this.hashCode == other.hashCode) 
-						&& this.key.equals(other.key) 
-						&& this.value.equals(other.value);
-			} else {
-				return false;
-			}
-			
-		}
 	}
 
 	/*
@@ -199,10 +185,8 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 				return ((LongHashable)key).getLongHashCode();
 			} else if (key instanceof CharSequence) {
 				return SpookyHash64.hash((CharSequence)key, 0L);
-			} else if (key instanceof byte[]) {
-				return SpookyHash64.hash((byte[])key, 0L);
 			} else {
-				throw new IllegalArgumentException("key must be CharSequence, byte[], or instanceof LongHashable");
+				throw new IllegalArgumentException("key must be CharSequence or instanceof LongHashable");
 			}
 		}
 	}
@@ -1081,7 +1065,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * If {@code keyAadpter} is {@code null}, the map will use a default key 
 	 * adapter. The default key adapter implementation attempts to do something 
 	 * reasonable based on the run-time type of the key, accommodating the 
-	 * following three use cases:
+	 * following use cases:
 	 * <ul>
 	 * <li> If the key can be cast to {@link LongHashable}, the default
 	 * adapter method {@code getLongHashCode()} returns {@code 
@@ -1089,9 +1073,6 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * <li> If the key can be cast to {@link CharSequence}, the default
 	 * adapter method {@code getLongHashCode()} returns {@code 
 	 * SpookyHash64.hash((CharSequence)key, 0L)}.
-	 * <li> If the key can be cast to {@code byte[]}, the default
-	 * adapter method {@code getLongHashCode()} returns {@code 
-	 * SpookyHash64.hash((byte[])key, 0L)}.
 	 * </ul>
 	 * Otherwise, any operation on the map that requires a key will throw
 	 * an {@link IllegalArgumentException}.
@@ -1131,7 +1112,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		}
 		
 		int initDirCapacity = initSegCount;
-		segmentCount = 0;
+		segmentCount = initSegCount;
 		forcedSplitCount = new AtomicInteger(0);
 		thresholdSplitCount = new AtomicInteger(0);
 		segmentSerialID = new AtomicInteger(0);

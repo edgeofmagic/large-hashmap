@@ -90,6 +90,14 @@ public class ConcurrentLargeHashMapTest {
 		LinkedList<SegmentIntegrityException> exceptions = auditor.verifyMapIntegrity(false, 0);
 		Assert.assertEquals("map integrity exceptions found", 0, exceptions.size());		
 	}
+	
+	private void printMapStats(ConcurrentLargeHashMap map, String title) {
+		ConcurrentLargeHashMapProbe mapProbe = new ConcurrentLargeHashMapProbe(map);
+		System.out.println(title);
+		System.out.printf("segment size %d%n", mapProbe.getSegmentSize());
+		System.out.printf("segment count %d%n", mapProbe.getSegmentCount());
+		System.out.printf("size %d, segment count %d, load factor %f%n", map.size(), mapProbe.getSegmentCount(), (float)map.size()/((float)( mapProbe.getSegmentCount()*mapProbe.getSegmentSize())) );
+	}
 
 	/*
 	 * Runs concurrent put test with 8 threads. If the test system has a larger number of cores, consider increasing
@@ -114,9 +122,16 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testConcurrentPutRemoveGet8() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		testConcurrentPutRemoveGet(8, 1024, 1000000L, 4096, 8, 0.8f);
+		testConcurrentPutRemoveGet(8, 1024, 1000000L, -1, 4096, 8, 0.8f);
 	}
 
+
+	@Test
+	public void testConcurrentPutRemoveGetSmash() throws SegmentIntegrityException, InterruptedException, ExecutionException {
+		testConcurrentPutRemoveGet(4, -1, 50000000L, 4000*4, 4096, 4, 1.0f);
+	}
+
+	
 	/*
 	 * Runs concurrent put/remove/iterator test with 8 threads. If the test system has a larger number of cores, you know
 	 * what to do.
@@ -126,10 +141,164 @@ public class ConcurrentLargeHashMapTest {
 		testConcurrentPutRemoveIterator(8, -1, 4096, 8, 0.8f);
 	}
 	
+
+	@Test
+	public void testConcurrentPutRemoveIteratorSmash() throws InterruptedException, ExecutionException, SegmentIntegrityException {
+		testConcurrentPutRemoveIterator(4, -1, 65536, 4, 1.0f);
+	}
+
+	
 	/* *****************************************************
 	 * Simple functional tests with no concurrency. 
 	 * *****************************************************
 	 */
+	
+	@Test(expected=NullPointerException.class)
+	public void testPutIfAbsentNullKey() {
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
+				new LargeHashMap.KeyAdapter<String>() {
+					public long getLongHashCode(String key) {
+						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
+					}
+				}				
+			);
+		map.putIfAbsent(null, 1);		
+	}
+	
+	@Test(expected=NullPointerException.class)
+	public void testPutIfAbsentNullValue() {
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
+				new LargeHashMap.KeyAdapter<String>() {
+					public long getLongHashCode(String key) {
+						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
+					}
+				}				
+			);
+		map.putIfAbsent("Hello", null);		
+	}
+
+	@Test(expected=NullPointerException.class)
+	public void testPutNullKey() {
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
+				new LargeHashMap.KeyAdapter<String>() {
+					public long getLongHashCode(String key) {
+						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
+					}
+				}				
+			);
+		map.put(null, 1);		
+	}
+	
+	@Test(expected=NullPointerException.class)
+	public void testPutNullValue() {
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
+				new LargeHashMap.KeyAdapter<String>() {
+					public long getLongHashCode(String key) {
+						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
+					}
+				}				
+			);
+		map.put("Hello", null);		
+	}
+
+	@Test(expected=NullPointerException.class)
+	public void testRemoveKNullKey() {
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
+				new LargeHashMap.KeyAdapter<String>() {
+					public long getLongHashCode(String key) {
+						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
+					}
+				}				
+			);
+		map.remove(null);				
+	}
+	
+
+	@Test(expected=NullPointerException.class)
+	public void testRemoveKVNullKey() {
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
+				new LargeHashMap.KeyAdapter<String>() {
+					public long getLongHashCode(String key) {
+						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
+					}
+				}				
+			);
+		map.remove(null, 1);				
+	}
+
+	@Test(expected=NullPointerException.class)
+	public void testRemoveKVNullValue() {
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
+				new LargeHashMap.KeyAdapter<String>() {
+					public long getLongHashCode(String key) {
+						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
+					}
+				}				
+			);
+		map.remove("Hello", null);				
+	}
+
+	@Test(expected=NullPointerException.class)
+	public void testReplaceKVNullKey() {
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
+				new LargeHashMap.KeyAdapter<String>() {
+					public long getLongHashCode(String key) {
+						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
+					}
+				}				
+			);
+		map.replace(null, 1);				
+	}
+
+	@Test(expected=NullPointerException.class)
+	public void testReplaceKVNullValue() {
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
+				new LargeHashMap.KeyAdapter<String>() {
+					public long getLongHashCode(String key) {
+						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
+					}
+				}				
+			);
+		map.replace("Hello", null);				
+	}
+
+	@Test(expected=NullPointerException.class)
+	public void testReplaceKVVNullKey() {
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
+				new LargeHashMap.KeyAdapter<String>() {
+					public long getLongHashCode(String key) {
+						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
+					}
+				}				
+			);
+		map.replace(null, 1, 2);				
+	}
+
+	@Test(expected=NullPointerException.class)
+	public void testReplaceKVVNullOldValue() {
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
+				new LargeHashMap.KeyAdapter<String>() {
+					public long getLongHashCode(String key) {
+						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
+					}
+				}				
+			);
+		map.replace("Hello", null, 2);				
+	}
+	
+	@Test(expected=NullPointerException.class)
+	public void testReplaceKVVNullNullValue() {
+		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
+				new LargeHashMap.KeyAdapter<String>() {
+					public long getLongHashCode(String key) {
+						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
+					}
+				}				
+			);
+		map.replace("Hello", 1, null);				
+	}
+	
+	
 	
 	@Test
 	public void testDefaultKeyAdapterString() throws SegmentIntegrityException {
@@ -139,23 +308,7 @@ public class ConcurrentLargeHashMapTest {
 		}
         checkMapIntegrity(map);	
 	}
-	
-	@Test
-	public void testDefaultKeyAdapterBytes() throws SegmentIntegrityException {
-		final ConcurrentLargeHashMap<byte[], Integer> map = new ConcurrentLargeHashMap<byte[], Integer>(1024, 2, 0.8f, null);
-		for (int i = 0; i < keys.length; i++) {
-			map.putIfAbsent(keys[i].getBytes(), new Integer(i));
-		}
-        System.out.printf("byte[] test map size %d%n", map.size());
-		for (int i = 0; i < keys.length; i++) {
-			Integer n = map.get(keys[i].getBytes());
-			Assert.assertNotNull(n);
-			Assert.assertEquals(i, n.intValue());
-		}
-        checkMapIntegrity(map);
-	}
-	
-	
+		
 	public class LongHashableString implements LongHashable {
 		
 		private final String string;
@@ -196,6 +349,15 @@ public class ConcurrentLargeHashMapTest {
 		}
         checkMapIntegrity(map);	
 	}
+	
+	@Test(expected=IllegalArgumentException.class)
+	public void testDefaultKeyAdapterTypeMismatch()  {
+		final ConcurrentLargeHashMap<Long, Integer> map = 
+				new ConcurrentLargeHashMap<Long, Integer>(1024, 2, 0.8f, null);
+		for (int i = 0; i < keys.length; i++) {
+			map.putIfAbsent(new Long((long)i), new Integer(i));
+		}
+	}
 
 	/*
 	 * Confirms that remove(key, value) only removes the entry if the key maps to the specificed value.
@@ -220,6 +382,23 @@ public class ConcurrentLargeHashMapTest {
 		Assert.assertFalse(map.remove(key, 1));
 		Assert.assertEquals(true, map.containsKey(key));
 		Assert.assertEquals(2, map.get(key).intValue());
+	}
+	
+	@Test
+	public void testRemoveValueAll() throws SegmentIntegrityException {
+		final ConcurrentLargeHashMap<String, Integer> map = 
+				new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, null);	
+		for (int i = 0; i < keys.length; i++) {
+			map.putIfAbsent(keys[i], new Integer(i));
+		}
+		for (int i = 0; i < keys.length; i++) {
+			Assert.assertFalse(map.remove(keys[i], new Integer(-1)));
+		}
+		for (int i = 0; i < keys.length; i++) {
+			Assert.assertTrue(map.remove(keys[i], new Integer(i)));
+		}
+        checkMapIntegrity(map);	
+		
 	}
 	
 	/*
@@ -295,7 +474,41 @@ public class ConcurrentLargeHashMapTest {
 		Assert.assertNull(newValue);
 		Assert.assertFalse(map.containsKey(key));
 	}
+	
+	@Test
+	public void testReplaceAll() throws SegmentIntegrityException {
+		final ConcurrentLargeHashMap<String, Integer> map = 
+				new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, null);	
+		for (int i = 0; i < keys.length; i++) {
+			map.putIfAbsent(keys[i], new Integer(i));
+		}
+		for (int i = 0; i < keys.length; i++) {
+			Integer n = map.replace(keys[i], new Integer(-1));
+			Assert.assertNotNull(n);
+			Assert.assertEquals(i, n.intValue());
+		}
+        checkMapIntegrity(map);	
 
+	}
+
+	@Test
+	public void testPutWithReplace() throws SegmentIntegrityException {
+		final ConcurrentLargeHashMap<String, Integer> map = 
+				new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, null);	
+		for (int i = 0; i < keys.length; i++) {
+			map.putIfAbsent(keys[i], new Integer(i));
+		}
+		for (int i = 0; i < keys.length; i++) {
+			Integer n = map.put(keys[i], new Integer(-1));
+			Assert.assertNotNull(n);
+			Assert.assertEquals(i, n.intValue());
+		}
+        checkMapIntegrity(map);	
+
+	}
+
+
+	
 	/*
 	 * Confirms that replace(key, oldValue, newValue) functions properly; specifically, that replacement
 	 * occurs only if a previous mapping for key exists in the map, and the previous mapped value 
@@ -485,7 +698,7 @@ public class ConcurrentLargeHashMapTest {
 	 * @throws ExecutionException
 	 */
 	private void testConcurrentPutRemoveGet(
-			final int threadCount, int removeDepth, final long recycleLimit, 
+			final int threadCount, final int removeDepth, final long recycleLimit, final int mapSize,
 			final int segSize, final int segCount, final float loadFactor)
 			throws SegmentIntegrityException, InterruptedException, ExecutionException {
 		
@@ -498,17 +711,31 @@ public class ConcurrentLargeHashMapTest {
 			);
 		final ConcurrentLinkedQueue<Integer> recycleQueue = new ConcurrentLinkedQueue<Integer>();
 		
-		for (int i = 0; i < keys.length; i++) {
+		final int putCount;
+		if (mapSize > keys.length || mapSize < 0) {
+			putCount = keys.length;
+		} else {
+			putCount = mapSize;
+		}
+		
+		int recycQueueSize;
+		if (removeDepth < 0 || removeDepth > putCount/2) {
+			recycQueueSize = putCount/2;
+		} else {
+			recycQueueSize = removeDepth;
+		}
+		
+		for (int i = 0; i < putCount; i++) {
 			map.putIfAbsent(keys[i], new Integer(i));
 		}
 		
 		Random rng = new Random(1337L);
-		for (int i = 0; i < removeDepth; i++) {
-			int ri = rng.nextInt(keys.length);
+		for (int i = 0; i < recycQueueSize; i++) {
+			int ri = rng.nextInt(putCount);
 			String key = keys[ri];
 			Integer val = map.remove(key);
 			while (val == null) {
-				ri = rng.nextInt(keys.length);
+				ri = rng.nextInt(putCount);
 				key = keys[ri];
 				val = map.remove(key);
 			}
@@ -530,10 +757,10 @@ public class ConcurrentLargeHashMapTest {
 					Integer inMap = map.putIfAbsent(keys[recycleVal.intValue()], recycleVal);
 					Assert.assertNull("unexpected recycle value already in map", inMap);
 					
-					int ri = localRng.nextInt(keys.length);
+					int ri = localRng.nextInt(putCount);
 					Integer removedVal = map.remove(keys[ri]);
 					while (removedVal == null) {
-						ri = localRng.nextInt(keys.length);
+						ri = localRng.nextInt(putCount);
 						removedVal = map.remove(keys[ri]);
 					}
 					Assert.assertEquals("removed value mismatch", removedVal.intValue(), ri);
@@ -560,7 +787,7 @@ public class ConcurrentLargeHashMapTest {
 				long currentThreadID = Thread.currentThread().getId();
 				Random localRng = new Random(currentThreadID);
 				while (recycleCount.get() < recycleLimit) {
-					int ri = localRng.nextInt(keys.length);
+					int ri = localRng.nextInt(putCount);
 					Integer val = map.get(keys[ri]);
 					if (val != null) {
 						Assert.assertEquals(ri, val.intValue());
@@ -587,13 +814,14 @@ public class ConcurrentLargeHashMapTest {
 		System.out.printf("totalGets %d%n", totalGets);
 		
 		Assert.assertEquals("total recycles/recycleLimit mismatch", totalRecycles, recycleLimit);
-		Assert.assertEquals("keyCount/map size mismatch", keys.length, map.size());
-        for (int i = 0; i < keys.length; i++) {
+		Assert.assertEquals("keyCount/map size mismatch", putCount, map.size());
+        for (int i = 0; i < putCount; i++) {
         	Integer val = map.get(keys[i]);
         	Assert.assertNotNull(String.format("entry %d missing from map", i), val);
         	Assert.assertEquals("wrong value for key in map", val.intValue(), i);
         }
         checkMapIntegrity(map);
+        printMapStats(map, "concurrent put remove get");
 	}
 	
 	@Test
@@ -847,6 +1075,8 @@ public class ConcurrentLargeHashMapTest {
         }
         Assert.assertEquals(finallyPresent + putInMap.size(), map.size());
         checkMapIntegrity(map);
+        printMapStats(map, "concurrent put remove iterator");
+
         
         System.out.printf("initiallyPresent %d, initiallyAbsent %d, finallyPresent %d, finallyAbsent %d, added %d, removed %d%n", 
         		initiallyPresent, initiallyAbsent, finallyPresent, finallyAbsent, added, removed);
