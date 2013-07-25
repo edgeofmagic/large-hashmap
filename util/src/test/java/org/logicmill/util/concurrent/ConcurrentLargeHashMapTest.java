@@ -47,15 +47,11 @@ import org.logicmill.util.concurrent.ConcurrentLargeHashMap;
 @SuppressWarnings("javadoc")
 public class ConcurrentLargeHashMapTest {
 	
-	private static String[] keys = new String[0];
+//	private static String[] keys = new String[0];
 
+	/*
 	@BeforeClass
 	public static void setUpBeforeClass() throws Exception {
-		
-		/*
-		 * Read contents of dictionary file (/usr/share/dict/words) into an
-		 * array of String; used as a key set by all tests
-		 */
 		
 		LinkedList<String> words = new LinkedList<String>();
 		File rfile = new File("/usr/share/dict/words");
@@ -81,6 +77,7 @@ public class ConcurrentLargeHashMapTest {
 		}
 
 	}
+	*/
 	
 	@SuppressWarnings("rawtypes")
 	/*
@@ -105,14 +102,25 @@ public class ConcurrentLargeHashMapTest {
 		System.out.printf("\tthreshold splits %d%n", mapProbe.getThresholdSplitCount());
 	}
 	
+	public static class ByteKeyAdapter implements KeyAdapter {
+		@Override
+		public long getLongHashCode(Object key) {
+			if (key instanceof byte[]) {
+				return org.logicmill.util.hash.SpookyHash64.hash((byte[])key,  0L);							
+			} else {
+				throw new IllegalArgumentException("key must be type byte[]");
+			}
+		}
+	}
+	
 	/*
 	 * Runs concurrent put test with 8 threads. If the test system has a larger number of cores, consider increasing
 	 * the thread count.
 	 */
 	@Test
 	public void testConcurrentPut8() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		ConcurrentLargeHashMap<String,Integer> map = new ConcurrentLargeHashMap<String,Integer>(8192, 8, 0.9f, null);
-		testConcurrentPut(map, 8);
+		ConcurrentLargeHashMap<byte[],Integer> map = new ConcurrentLargeHashMap<byte[],Integer>(8192, 8, 0.9f, new ByteKeyAdapter());
+		testConcurrentPut(map, 8, 1000000);
 		printMapStats(map, "testConcurrentPut8");
 	}
 
@@ -121,8 +129,8 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testConcurrentPutLoad1() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		ConcurrentLargeHashMap<String,Integer> map = new ConcurrentLargeHashMap<String,Integer>(8192, 8, 1.0f, null);
-		testConcurrentPut(map, 4);
+		ConcurrentLargeHashMap<byte[],Integer> map = new ConcurrentLargeHashMap<byte[],Integer>(524288, 2, 1.0f, new ByteKeyAdapter());
+		testConcurrentPut(map, 4, 800000);
 		printMapStats(map, "testConcurrentPutLoad1");
 	}
 	
@@ -132,15 +140,16 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testConcurrentPutRemoveGet8() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		ConcurrentLargeHashMap<String,Integer> map = new ConcurrentLargeHashMap<String,Integer>(4096, 8, 1.0f, null);
-		testConcurrentPutRemoveGet(map, 8, -1, 0.25f, 1000000L);
+		ConcurrentLargeHashMap<byte[],Integer> map = 
+				new ConcurrentLargeHashMap<byte[],Integer>(4096, 8, 1.0f, new ByteKeyAdapter());
+		testConcurrentPutRemoveGet(map, 8, 200000, 0.25f, 1000000L);
 		printMapStats(map, "testConcurrentPutRemoveGet8");
 	}
 
 
 	@Test
 	public void testConcurrentPutRemoveGetSmash() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		ConcurrentLargeHashMap<String,Integer> map = new ConcurrentLargeHashMap<String,Integer>(4096, 4, 1.0f, null);
+		ConcurrentLargeHashMap<byte[],Integer> map = new ConcurrentLargeHashMap<byte[],Integer>(8192, 2, 1.0f, new ByteKeyAdapter());
 		testConcurrentPutRemoveGet(map, 4, 14400, 0.5f, 10000000L);
 		printMapStats(map, "testConcurrentPutRemoveGetSmash");
 	}
@@ -152,22 +161,22 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testConcurrentPutRemoveIteratorContract8() throws InterruptedException, ExecutionException, SegmentIntegrityException {
-		ConcurrentLargeHashMap<String,Integer> map = new ConcurrentLargeHashMap<String,Integer>(4096, 8, 0.8f, null);
-		testConcurrentPutRemoveIteratorContract(map, 8, -1, 0.5f);
+		ConcurrentLargeHashMap<byte[],Integer> map = new ConcurrentLargeHashMap<byte[],Integer>(4096, 8, 0.8f, new ByteKeyAdapter());
+		testConcurrentPutRemoveIteratorContract(map, 8, 200000, 0.5f);
 		printMapStats(map, "testConcurrentPutRemoveIteratorContract8");
 	}
 	
 
 	@Test
 	public void testConcurrentPutRemoveIteratorContract2Segs() throws InterruptedException, ExecutionException, SegmentIntegrityException {
-		ConcurrentLargeHashMap<String,Integer> map = new ConcurrentLargeHashMap<String,Integer>(65536, 2, 1.0f, null);
+		ConcurrentLargeHashMap<byte[],Integer> map = new ConcurrentLargeHashMap<byte[],Integer>(65536, 2, 1.0f, new ByteKeyAdapter());
 		testConcurrentPutRemoveIteratorContract(map, 4, 200000, 0.5f);
 		printMapStats(map, "testConcurrentPutRemoveIteratorContract2Segs");
 	}
 	
 	@Test
 	public void testConcurrentPutRemoveIterator4() throws InterruptedException, ExecutionException, SegmentIntegrityException {
-		ConcurrentLargeHashMap<String,Integer> map = new ConcurrentLargeHashMap<String,Integer>(65536, 2, 1.0f, null);
+		ConcurrentLargeHashMap<byte[],Integer> map = new ConcurrentLargeHashMap<byte[],Integer>(65536, 2, 1.0f, new ByteKeyAdapter());
 		testConcurrentPutRemoveIterator(map, 4, 200000, 0.5f, 1000000L);
 		printMapStats(map, "testConcurrentPutRemoveIterator4");
 	}
@@ -279,10 +288,8 @@ public class ConcurrentLargeHashMapTest {
 	@Test
 	public void testDefaultKeyAdapterString() throws SegmentIntegrityException {
 		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, null);
-		for (int i = 0; i < keys.length; i++) {
-			map.putIfAbsent(keys[i], new Integer(i));
-		}
-        checkMapIntegrity(map);	
+		map.put("hello", 1);
+		Assert.assertTrue(map.containsKey("hello"));
 	}
 		
 	public class LongHashableString implements LongHashable {
@@ -315,24 +322,18 @@ public class ConcurrentLargeHashMapTest {
 	public void testDefaultKeyAdapterLongHashable() throws SegmentIntegrityException {
 		final ConcurrentLargeHashMap<LongHashableString, Integer> map = 
 				new ConcurrentLargeHashMap<LongHashableString, Integer>(1024, 2, 0.8f, null);
-		for (int i = 0; i < keys.length; i++) {
-			map.putIfAbsent(new LongHashableString(keys[i]), new Integer(i));
-		}
-		for (int i = 0; i < keys.length; i++) {
-			Integer n = map.get(new LongHashableString(keys[i]));
-			Assert.assertNotNull(n);
-			Assert.assertEquals(i, n.intValue());
-		}
+		map.putIfAbsent(new LongHashableString("hello"), new Integer(0));
+		Integer n = map.get(new LongHashableString("hel"+"lo"));
+		Assert.assertNotNull(n);
+		Assert.assertEquals(0, n.intValue());
         checkMapIntegrity(map);	
 	}
 	
 	@Test(expected=IllegalArgumentException.class)
 	public void testDefaultKeyAdapterTypeMismatch()  {
 		final ConcurrentLargeHashMap<Long, Integer> map = 
-				new ConcurrentLargeHashMap<Long, Integer>(1024, 2, 0.8f, null);
-		for (int i = 0; i < keys.length; i++) {
-			map.putIfAbsent(new Long((long)i), new Integer(i));
-		}
+			new ConcurrentLargeHashMap<Long, Integer>(1024, 2, 0.8f, null);
+		map.putIfAbsent(new Long(0L), new Integer(0));
 	}
 
 	/*
@@ -354,22 +355,25 @@ public class ConcurrentLargeHashMapTest {
 		Assert.assertEquals(2, map.get(key).intValue());
 	}
 	
+
 	@Test
 	public void testRemoveValueAll() throws SegmentIntegrityException {
-		final ConcurrentLargeHashMap<String, Integer> map = 
-				new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, null);	
-		for (int i = 0; i < keys.length; i++) {
-			map.putIfAbsent(keys[i], new Integer(i));
+		RandomKeySet keySet = new RandomKeySet(100000, 128, 1337L);
+		final ConcurrentLargeHashMap<byte[], Integer> map = 
+				new ConcurrentLargeHashMap<byte[], Integer>(1024, 2, 0.8f, new ByteKeyAdapter());
+		for (int i = 0; i < keySet.size(); i++) {
+			map.putIfAbsent(keySet.getKey(i), new Integer(i));
 		}
-		for (int i = 0; i < keys.length; i++) {
-			Assert.assertFalse(map.remove(keys[i], new Integer(-1)));
+		for (int i = 0; i < keySet.size(); i++) {
+			Assert.assertFalse(map.remove(keySet.getKey(i), new Integer(-1)));
 		}
-		for (int i = 0; i < keys.length; i++) {
-			Assert.assertTrue(map.remove(keys[i], new Integer(i)));
+		for (int i = 0; i < keySet.size(); i++) {
+			Assert.assertTrue(map.remove(keySet.getKey(i), new Integer(i)));
 		}
         checkMapIntegrity(map);	
 		
 	}
+
 	
 	/*
 	 * Confirms that containsKey(key) and remove(key) function properly.
@@ -441,13 +445,14 @@ public class ConcurrentLargeHashMapTest {
 	
 	@Test
 	public void testReplaceAll() throws SegmentIntegrityException {
-		final ConcurrentLargeHashMap<String, Integer> map = 
-				new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, null);	
-		for (int i = 0; i < keys.length; i++) {
-			map.putIfAbsent(keys[i], new Integer(i));
+		RandomKeySet keySet = new RandomKeySet(100000, 128, 1337L);
+		final ConcurrentLargeHashMap<byte[], Integer> map = 
+				new ConcurrentLargeHashMap<byte[], Integer>(1024, 2, 0.8f, new ByteKeyAdapter());	
+		for (int i = 0; i < keySet.size(); i++) {
+			map.putIfAbsent(keySet.getKey(i), new Integer(i));
 		}
-		for (int i = 0; i < keys.length; i++) {
-			Integer n = map.replace(keys[i], new Integer(-1));
+		for (int i = 0; i < keySet.size(); i++) {
+			Integer n = map.replace(keySet.getKey(i), new Integer(-1));
 			Assert.assertNotNull(n);
 			Assert.assertEquals(i, n.intValue());
 		}
@@ -457,13 +462,14 @@ public class ConcurrentLargeHashMapTest {
 
 	@Test
 	public void testPutWithReplace() throws SegmentIntegrityException {
-		final ConcurrentLargeHashMap<String, Integer> map = 
-				new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, null);	
-		for (int i = 0; i < keys.length; i++) {
-			map.putIfAbsent(keys[i], new Integer(i));
+		RandomKeySet keySet = new RandomKeySet(100000, 128, 1337L);
+		final ConcurrentLargeHashMap<byte[], Integer> map = 
+				new ConcurrentLargeHashMap<byte[], Integer>(1024, 2, 0.8f, new ByteKeyAdapter());	
+		for (int i = 0; i < keySet.size(); i++) {
+			map.putIfAbsent(keySet.getKey(i), new Integer(i));
 		}
-		for (int i = 0; i < keys.length; i++) {
-			Integer n = map.put(keys[i], new Integer(-1));
+		for (int i = 0; i < keySet.size(); i++) {
+			Integer n = map.put(keySet.getKey(i), new Integer(-1));
 			Assert.assertNotNull(n);
 			Assert.assertEquals(i, n.intValue());
 		}
@@ -530,18 +536,22 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testKeyIterator() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(4096, 8, 0.8f, null);
-		HashSet<String> keySet = new HashSet<String>(Arrays.asList(keys));
+		RandomKeySet keySet = new RandomKeySet(100000, 128, 1337L);
+		final ConcurrentLargeHashMap<byte[], Integer> map = 
+				new ConcurrentLargeHashMap<byte[], Integer>(4096, 8, 0.8f, new ByteKeyAdapter());
+		HashSet<byte[]> intoMap = new HashSet<byte[]>();
 		int i = 0;
-		for (String key : keys) {
+		while (keySet.hasMoreKeys()) {
+			byte[] key = keySet.getKey();
+			intoMap.add(key);
 			map.put(key, i++);
 		}
-		HashSet<String> fromMap = new HashSet<String>();
-		Iterator<String> keyIter = map.getKeyIterator();
+		HashSet<byte[]> fromMap = new HashSet<byte[]>();
+		Iterator<byte[]> keyIter = map.getKeyIterator();
 		while (keyIter.hasNext()) {
 			fromMap.add(keyIter.next());
 		}
-		Assert.assertEquals(keySet, fromMap);
+		Assert.assertEquals(intoMap, fromMap);
 	}
 	
 	/*
@@ -580,28 +590,29 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testEntryIterator() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(4096, 8, 0.8f, null);
-		HashSet<String> keySet = new HashSet<String>(Arrays.asList(keys));
-		HashSet<Integer> valSet = new HashSet<Integer>();
-		for (int i = 0; i < keys.length; i++) {
-			valSet.add(i);
-		}
-		
+		RandomKeySet keySet = new RandomKeySet(100000, 128, 1337L);
+		final ConcurrentLargeHashMap<byte[], Integer> map = 
+				new ConcurrentLargeHashMap<byte[], Integer>(4096, 8, 0.8f, new ByteKeyAdapter());
+		HashSet<byte[]> keysIntoMap = new HashSet<byte[]>();
+		HashSet<Integer> valsIntoMap = new HashSet<Integer>();
 		int i = 0;
-		for (String key : keys) {
+		while (keySet.hasMoreKeys()) {
+			byte[] key = keySet.getKey();
+			keysIntoMap.add(key);
+			valsIntoMap.add(i);
 			map.put(key, i++);
 		}
 		
 		HashSet<Integer> valsFromMap = new HashSet<Integer>();
-		HashSet<String> keysFromMap = new HashSet<String>();
-		Iterator<LargeHashMap.Entry<String, Integer>> entryIter = map.getEntryIterator();
+		HashSet<byte[]> keysFromMap = new HashSet<byte[]>();
+		Iterator<LargeHashMap.Entry<byte[], Integer>> entryIter = map.getEntryIterator();
 		while (entryIter.hasNext()) {
-			LargeHashMap.Entry<String,Integer> entry = entryIter.next();
+			LargeHashMap.Entry<byte[],Integer> entry = entryIter.next();
 			valsFromMap.add(entry.getValue());
 			keysFromMap.add(entry.getKey());
 		}
-		Assert.assertEquals(valSet, valsFromMap);
-		Assert.assertEquals(keySet, keysFromMap);
+		Assert.assertEquals(valsIntoMap, valsFromMap);
+		Assert.assertEquals(keysIntoMap, keysFromMap);
 	}
 	
 	/*
@@ -638,21 +649,21 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testValueIterator() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(4096, 8, 0.8f, null);
-		HashSet<Integer> valSet = new HashSet<Integer>();
-		for (int i = 0; i < keys.length; i++) {
-			valSet.add(i);
-		}
+		RandomKeySet keySet = new RandomKeySet(100000, 128, 1337L);
+		final ConcurrentLargeHashMap<byte[], Integer> map = 
+				new ConcurrentLargeHashMap<byte[], Integer>(4096, 8, 0.8f, new ByteKeyAdapter());
+		HashSet<Integer> intoMap = new HashSet<Integer>();
 		int i = 0;
-		for (String key : keys) {
-			map.put(key, i++);
+		while(keySet.hasMoreKeys()) {
+			intoMap.add(i);
+			map.put(keySet.getKey(), i++);
 		}
 		HashSet<Integer> fromMap = new HashSet<Integer>();
 		Iterator<Integer> valIter = map.getValueIterator();
 		while (valIter.hasNext()) {
 			fromMap.add(valIter.next());
 		}
-		Assert.assertEquals(valSet, fromMap);		
+		Assert.assertEquals(intoMap, fromMap);		
 	}
 
 	/*
@@ -714,33 +725,28 @@ public class ConcurrentLargeHashMapTest {
 	 * @throws InterruptedException
 	 * @throws ExecutionException
 	 */
-	private void testConcurrentPutRemoveGet(final ConcurrentLargeHashMap<String, Integer> map,
-			final int threadCount, final int keySetSize, final float recycleFraction, final long recycleLimit)
+	private void testConcurrentPutRemoveGet(final ConcurrentLargeHashMap<byte[], Integer> map,
+			final int threadCount, final int keyCount, final float recycleFraction, final long recycleLimit)
 			throws SegmentIntegrityException, InterruptedException, ExecutionException {
 		
+		final RandomKeySet keySet = new RandomKeySet(keyCount, 128, 1337L);
+
 		final ConcurrentLinkedQueue<Integer> recycleQueue = new ConcurrentLinkedQueue<Integer>();
-		
-		final int keyCount;
-		if (keySetSize > keys.length || keySetSize < 0) {
-			keyCount = keys.length;
-		} else {
-			keyCount = keySetSize;
-		}
 		
 		int recycQueueSize = (int)(keyCount * recycleFraction);
 		
 		for (int i = 0; i < keyCount; i++) {
-			map.putIfAbsent(keys[i], new Integer(i));
+			map.putIfAbsent(keySet.getKey(i), new Integer(i));
 		}
 		
 		Random rng = new Random(1337L);
 		for (int i = 0; i < recycQueueSize; i++) {
 			int ri = rng.nextInt(keyCount);
-			String key = keys[ri];
+			byte[] key = keySet.getKey(ri);
 			Integer val = map.remove(key);
 			while (val == null) {
 				ri = rng.nextInt(keyCount);
-				key = keys[ri];
+				key = keySet.getKey(ri);
 				val = map.remove(key);
 			}
 			recycleQueue.offer(val);
@@ -758,14 +764,14 @@ public class ConcurrentLargeHashMapTest {
 				while (totalRecycles < recycleLimit) {
 					Integer recycleVal = recycleQueue.poll();
 					Assert.assertNotNull(recycleVal);
-					Integer inMap = map.putIfAbsent(keys[recycleVal.intValue()], recycleVal);
+					Integer inMap = map.putIfAbsent(keySet.getKey(recycleVal.intValue()), recycleVal);
 					Assert.assertNull("unexpected recycle value already in map", inMap);
 					
 					int ri = localRng.nextInt(keyCount);
-					Integer removedVal = map.remove(keys[ri]);
+					Integer removedVal = map.remove(keySet.getKey(ri));
 					while (removedVal == null) {
 						ri = localRng.nextInt(keyCount);
-						removedVal = map.remove(keys[ri]);
+						removedVal = map.remove(keySet.getKey(ri));
 					}
 					Assert.assertEquals("removed value mismatch", removedVal.intValue(), ri);
 					recycleQueue.offer(removedVal);
@@ -775,7 +781,7 @@ public class ConcurrentLargeHashMapTest {
 				
 				Integer val = recycleQueue.poll();
 				while (val != null) {
-					Integer inMap = map.putIfAbsent(keys[val.intValue()], val);
+					Integer inMap = map.putIfAbsent(keySet.getKey(val.intValue()), val);
 					Assert.assertNull("unexpected recycle value already in map", inMap);	
 					val = recycleQueue.poll();
 				}
@@ -792,7 +798,7 @@ public class ConcurrentLargeHashMapTest {
 				Random localRng = new Random(currentThreadID);
 				while (recycleCount.get() < recycleLimit) {
 					int ri = localRng.nextInt(keyCount);
-					Integer val = map.get(keys[ri]);
+					Integer val = map.get(keySet.getKey(ri));
 					if (val != null) {
 						Assert.assertEquals(ri, val.intValue());
 					}
@@ -820,7 +826,7 @@ public class ConcurrentLargeHashMapTest {
 		Assert.assertEquals("total recycles/recycleLimit mismatch", totalRecycles, recycleLimit);
 		Assert.assertEquals("keyCount/map size mismatch", keyCount, map.size());
         for (int i = 0; i < keyCount; i++) {
-        	Integer val = map.get(keys[i]);
+        	Integer val = map.get(keySet.getKey(i));
         	Assert.assertNotNull(String.format("entry %d missing from map", i), val);
         	Assert.assertEquals("wrong value for key in map", val.intValue(), i);
         }
@@ -829,23 +835,16 @@ public class ConcurrentLargeHashMapTest {
 	
 	@Test
 	public void testConcurrentGet4() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		testConcurrentGet(4, 5000000L, 8192, 4, 0.8f);
+		ConcurrentLargeHashMap<byte[], Integer> map = 
+				new ConcurrentLargeHashMap<byte[], Integer>(8192, 4, 0.8f, new ByteKeyAdapter());
+		testConcurrentGet(map, 4, 200000, 5000000L);
 	}
 	
-	private void testConcurrentGet(int threadCount, final long getLimit, int segSize, int segCount, float loadFactor)
+	private void testConcurrentGet(final ConcurrentLargeHashMap<byte[], Integer> map, int threadCount, final int keyCount, final long getLimit)
 			throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(segSize, segCount, loadFactor, 
-				new KeyAdapter() {
-					public long getLongHashCode(Object key) {
-						if (key instanceof String) {
-							return org.logicmill.util.hash.SpookyHash64.hash((CharSequence)key,  0L);							
-						} else {
-							throw new IllegalArgumentException("key must be type String");
-						}
-					}
-				}				
-			);
 
+		final RandomKeySet keySet = new RandomKeySet(keyCount, 128, 1337L);
+		
 		Callable<Long> getTask = new Callable<Long>() {
 			@Override
 			public Long call() {
@@ -854,12 +853,12 @@ public class ConcurrentLargeHashMapTest {
 				if (currentThreadID < 0) {
 					currentThreadID &= (1L << 62) - 1L;
 				}
-				startIndex = (int)(currentThreadID % keys.length);
+				startIndex = (int)(currentThreadID % keySet.size());
 				long getCount = 0;
 				int next = startIndex; 
 				while (getCount++ < getLimit) {
-					map.get(keys[next]);					
-					if (++next >= keys.length) {
+					map.get(keySet.getKey(next));					
+					if (++next >= keySet.size()) {
 						next = 0;
 					}
 				}
@@ -868,8 +867,8 @@ public class ConcurrentLargeHashMapTest {
 		};
 		
 		
-		for (int i = 0; i < keys.length; i++) {
-			map.putIfAbsent(keys[i], new Integer(i));
+		for (int i = 0; i < keySet.size(); i++) {
+			map.putIfAbsent(keySet.getKey(i), new Integer(i));
 		}
 
 		List<Callable<Long>> getTasks = Collections.nCopies(threadCount, getTask);
@@ -898,9 +897,11 @@ public class ConcurrentLargeHashMapTest {
 	 * @throws InterruptedException
 	 * @throws ExecutionException
 	 */
-	private void testConcurrentPut(final ConcurrentLargeHashMap<String, Integer> map, int threadCount)
+	private void testConcurrentPut(final ConcurrentLargeHashMap<byte[], Integer> map, int threadCount, int keyCount)
 			throws SegmentIntegrityException, InterruptedException, ExecutionException {
-	
+
+		final RandomKeySet keySet = new RandomKeySet(keyCount, 128, 1337L);
+
 		final AtomicInteger nextKey = new AtomicInteger(0);
 		
 		Callable<Integer> putTask = new Callable<Integer>() {
@@ -908,8 +909,8 @@ public class ConcurrentLargeHashMapTest {
 			public Integer call() {
 				int putCount = 0;
 				int next = nextKey.getAndIncrement(); 
-				while (next < keys.length) {
-					String key = keys[next];
+				while (next < keySet.size()) {
+					byte[] key = keySet.getKey(next);
 					Integer val = new Integer(next);
 					Integer inMap = map.putIfAbsent(key, val);
 					Assert.assertNull(inMap);
@@ -930,10 +931,10 @@ public class ConcurrentLargeHashMapTest {
             // Throws an exception if an exception was thrown by the task.
             totalPuts += future.get();
         }
-        Assert.assertEquals("keyCount/totalPuts mismatch", keys.length, totalPuts);
-        Assert.assertEquals("keyCount/map size mismatch", keys.length, map.size());
-        for (int i = 0; i < keys.length; i++) {
-        	Integer val = map.get(keys[i]);
+        Assert.assertEquals("keyCount/totalPuts mismatch", keySet.size(), totalPuts);
+        Assert.assertEquals("keyCount/map size mismatch", keySet.size(), map.size());
+        for (int i = 0; i < keySet.size(); i++) {
+        	Integer val = map.get(keySet.getKey(i));
         	Assert.assertNotNull(String.format("entry %d missing from map", i), val);
         	Assert.assertEquals("wrong value for key in map", val.intValue(), i);
         }
@@ -953,30 +954,26 @@ public class ConcurrentLargeHashMapTest {
 	 * @throws ExecutionException
 	 * @throws SegmentIntegrityException
 	 */
-	private void testConcurrentPutRemoveIteratorContract(final ConcurrentLargeHashMap<String, Integer> map, 
-			int threadCount, int keySetSize, float fractionInPool) 
+	private void testConcurrentPutRemoveIteratorContract(final ConcurrentLargeHashMap<byte[], Integer> map, 
+			int threadCount, final int keyCount, float fractionInPool) 
 	throws InterruptedException, ExecutionException, SegmentIntegrityException {
-		final ConcurrentLinkedQueue<String> initallyInMap = new ConcurrentLinkedQueue<String>();
-		final ConcurrentLinkedQueue<String> initiallyNotInMap = new ConcurrentLinkedQueue<String>();
-		final ConcurrentLinkedQueue<String> removedFromMap = new ConcurrentLinkedQueue<String>();
-		final ConcurrentLinkedQueue<String> putInMap = new ConcurrentLinkedQueue<String>();
+		final ConcurrentLinkedQueue<byte[]> initallyInMap = new ConcurrentLinkedQueue<byte[]>();
+		final ConcurrentLinkedQueue<byte[]> initiallyNotInMap = new ConcurrentLinkedQueue<byte[]>();
+		final ConcurrentLinkedQueue<byte[]> removedFromMap = new ConcurrentLinkedQueue<byte[]>();
+		final ConcurrentLinkedQueue<byte[]> putInMap = new ConcurrentLinkedQueue<byte[]>();
 		final AtomicBoolean iteratorStarted = new AtomicBoolean(false);
 		final AtomicBoolean iteratorFinished = new AtomicBoolean(false);
 		
-		final int keyCount;
-		if (keySetSize > keys.length || keySetSize < 0) {
-			keyCount = keys.length;
-		} else {
-			keyCount = keySetSize;
-		}
+		final RandomKeySet keySet = new RandomKeySet(keyCount, 128, 1337L);
+
 		int notInMapCount = (int)(keyCount * fractionInPool);
 		
-		for (int i = 0; i < keyCount; i++) {
+		for (int i = 0; i < keySet.size(); i++) {
 			if (i < notInMapCount) {
-				initiallyNotInMap.add(keys[i]);
+				initiallyNotInMap.add(keySet.getKey(i));
 			} else {
-				map.putIfAbsent(keys[i], new Integer(i));
-				initallyInMap.add(keys[i]);
+				map.putIfAbsent(keySet.getKey(i), new Integer(i));
+				initallyInMap.add(keySet.getKey(i));
 			}
 		}
 		int initiallyPresent = initallyInMap.size();
@@ -986,7 +983,7 @@ public class ConcurrentLargeHashMapTest {
 			@Override
 			public Integer call() throws InterruptedException {
 				int removed = 0;
-				String removeKey = initallyInMap.poll();
+				byte[] removeKey = initallyInMap.poll();
 				while (removeKey != null) {
 					if (iteratorStarted.get()) {
 						if (!iteratorFinished.get()) {
@@ -995,7 +992,7 @@ public class ConcurrentLargeHashMapTest {
 							 */
 							Assert.assertNotNull(map.remove(removeKey)); // remove key from the map
 							removedFromMap.add(removeKey); // put it in removedFromMap
-							String addKey = initiallyNotInMap.poll(); // get a key that's not in the map
+							byte[] addKey = initiallyNotInMap.poll(); // get a key that's not in the map
 							if (addKey != null) {
 								Assert.assertNull(map.putIfAbsent(addKey,-1));
 								putInMap.add(addKey); // put it in the map
@@ -1020,11 +1017,11 @@ public class ConcurrentLargeHashMapTest {
 			}
 		};
 		
-		Callable<LinkedList<String>> iteratorTask = new Callable<LinkedList<String>>() {
+		Callable<LinkedList<byte[]>> iteratorTask = new Callable<LinkedList<byte[]>>() {
 			@Override
-			public LinkedList<String> call() throws InterruptedException {
-				LinkedList<String> observed = new LinkedList<String>();
-				Iterator<String> keyIter = map.getKeyIterator();
+			public LinkedList<byte[]> call() throws InterruptedException {
+				LinkedList<byte[]> observed = new LinkedList<byte[]>();
+				Iterator<byte[]> keyIter = map.getKeyIterator();
 				iteratorStarted.set(true);
 				while (keyIter.hasNext()) {
 					observed.add(keyIter.next());
@@ -1040,33 +1037,33 @@ public class ConcurrentLargeHashMapTest {
         for (Callable<Integer> task : putRemoveTasks) {
             results.add(executorService.submit(task));
         }
-        Future<LinkedList<String>> iteratorResult = executorService.submit(iteratorTask);
+        Future<LinkedList<byte[]>> iteratorResult = executorService.submit(iteratorTask);
         @SuppressWarnings("unused")
 		int totalRemoves = 0;
         for (Future<Integer> result : results) {
         	totalRemoves += result.get().intValue();
         }
-        LinkedList<String> observed = iteratorResult.get();
-        HashSet<String> observedSet = new HashSet<String>(observed);
+        LinkedList<byte[]> observed = iteratorResult.get();
+        HashSet<byte[]> observedSet = new HashSet<byte[]>(observed);
 
         int finallyPresent = initallyInMap.size();
         int finallyAbsent = initiallyNotInMap.size();
         int added = putInMap.size();
         int removed = removedFromMap.size();
         int addedAndObserved = 0;
-        for (String key : putInMap) {
+        for (byte[] key : putInMap) {
         	if (observedSet.contains(key)) {
         		addedAndObserved++;
         	}
         }
         int removedAndObserved = 0;
-        for (String key : removedFromMap) {
+        for (byte[] key : removedFromMap) {
         	if (observedSet.contains(key)) {
         		removedAndObserved++;
         	}
         }
         Assert.assertTrue(observedSet.containsAll(initallyInMap));
-        for (String key : initiallyNotInMap) {
+        for (byte[] key : initiallyNotInMap) {
         	Assert.assertFalse(observedSet.contains(key));
         }
         Assert.assertEquals(finallyPresent + putInMap.size(), map.size());
@@ -1079,33 +1076,27 @@ public class ConcurrentLargeHashMapTest {
         		addedAndObserved, removedAndObserved, observed.size(), map.size() );
 	}
 	
-	private void testConcurrentPutRemoveIterator(final ConcurrentLargeHashMap<String, Integer> map,
-			final int threadCount, final int keySetSize, final float recycleFraction, final long recycleLimit)
+	private void testConcurrentPutRemoveIterator(final ConcurrentLargeHashMap<byte[], Integer> map,
+			final int threadCount, final int keyCount, final float recycleFraction, final long recycleLimit)
 			throws SegmentIntegrityException, InterruptedException, ExecutionException {
 		
+		final RandomKeySet keySet = new RandomKeySet(keyCount, 128, 1337L);
 		final ConcurrentLinkedQueue<Integer> recycleQueue = new ConcurrentLinkedQueue<Integer>();
-		
-		final int keyCount;
-		if (keySetSize > keys.length || keySetSize < 0) {
-			keyCount = keys.length;
-		} else {
-			keyCount = keySetSize;
-		}
 		
 		int recycQueueSize = (int)(keyCount * recycleFraction);
 		
 		for (int i = 0; i < keyCount; i++) {
-			map.putIfAbsent(keys[i], new Integer(i));
+			map.putIfAbsent(keySet.getKey(i), new Integer(i));
 		}
 		
 		Random rng = new Random(1337L);
 		for (int i = 0; i < recycQueueSize; i++) {
 			int ri = rng.nextInt(keyCount);
-			String key = keys[ri];
+			byte[] key = keySet.getKey(ri);
 			Integer val = map.remove(key);
 			while (val == null) {
 				ri = rng.nextInt(keyCount);
-				key = keys[ri];
+				key = keySet.getKey(ri);
 				val = map.remove(key);
 			}
 			recycleQueue.offer(val);
@@ -1123,14 +1114,14 @@ public class ConcurrentLargeHashMapTest {
 				while (totalRecycles < recycleLimit) {
 					Integer recycleVal = recycleQueue.poll();
 					Assert.assertNotNull(recycleVal);
-					Integer inMap = map.putIfAbsent(keys[recycleVal.intValue()], recycleVal);
+					Integer inMap = map.putIfAbsent(keySet.getKey(recycleVal.intValue()), recycleVal);
 					Assert.assertNull("unexpected recycle value already in map", inMap);
 					
 					int ri = localRng.nextInt(keyCount);
-					Integer removedVal = map.remove(keys[ri]);
+					Integer removedVal = map.remove(keySet.getKey(ri));
 					while (removedVal == null) {
 						ri = localRng.nextInt(keyCount);
-						removedVal = map.remove(keys[ri]);
+						removedVal = map.remove(keySet.getKey(ri));
 					}
 					Assert.assertEquals("removed value mismatch", removedVal.intValue(), ri);
 					recycleQueue.offer(removedVal);
@@ -1140,7 +1131,7 @@ public class ConcurrentLargeHashMapTest {
 				
 				Integer val = recycleQueue.poll();
 				while (val != null) {
-					Integer inMap = map.putIfAbsent(keys[val.intValue()], val);
+					Integer inMap = map.putIfAbsent(keySet.getKey(val.intValue()), val);
 					Assert.assertNull("unexpected recycle value already in map", inMap);	
 					val = recycleQueue.poll();
 				}
@@ -1154,10 +1145,10 @@ public class ConcurrentLargeHashMapTest {
 			public Long call() throws InterruptedException {
 				long localIterations = 0L;
 				while (recycleCount.get() < recycleLimit) {
-					Iterator<LargeHashMap.Entry<String,Integer>> iter = map.getEntryIterator();
+					Iterator<LargeHashMap.Entry<byte[],Integer>> iter = map.getEntryIterator();
 					while (iter.hasNext()) {
 						@SuppressWarnings("unused")
-						LargeHashMap.Entry<String,Integer> entry = iter.next();
+						LargeHashMap.Entry<byte[],Integer> entry = iter.next();
 					}
 					localIterations++;
 				}
@@ -1183,7 +1174,7 @@ public class ConcurrentLargeHashMapTest {
 		Assert.assertEquals("total recycles/recycleLimit mismatch", totalRecycles, recycleLimit);
 		Assert.assertEquals("keyCount/map size mismatch", keyCount, map.size());
         for (int i = 0; i < keyCount; i++) {
-        	Integer val = map.get(keys[i]);
+        	Integer val = map.get(keySet.getKey(i));
         	Assert.assertNotNull(String.format("entry %d missing from map", i), val);
         	Assert.assertEquals("wrong value for key in map", val.intValue(), i);
         }
