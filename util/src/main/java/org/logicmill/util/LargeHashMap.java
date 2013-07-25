@@ -69,23 +69,6 @@ public interface LargeHashMap<K, V> {
 		 * @return the value corresponding to this entry
 		 */
 		public V getValue();
-				
-		/** Compares the specified object with this entry.
-		 * Returns {@code true} if the object is an instance of
-		 * the same class as this entry, and represents the 
-		 * same mapping as this entry.
-		 * Entries e1 and e2 represent the same mapping if:
-		 * <pre><code>	e1.getKey().equals(e2.getKey()) &&
-		 * 	e1.getValue() == null ? e2.getValue() == null :
-		 * 	e1.getValue().equals(e2.getValue())
-		 * </code></pre>
-		 * 
-		 * @param o object to be compared for equality to this entry
-		 * @return true if the specified object represents the same mapping as this entry
-		 */
-		@Override
-		public boolean equals(Object o);
-
 	}
 	
 	/** An object that produces 64-bit hash code values for instances of the
@@ -101,7 +84,7 @@ public interface LargeHashMap<K, V> {
 	 *
 	 * @param <K> the type of key for which long hash codes are computed
 	 */
-	public interface KeyAdapter<K> {
+	public interface KeyAdapter {
 		
 		/** Compute a 64-bit hash code for the specified key.
 		 * <p>The contract for {@code getHashCode(K key)} is essentially the 
@@ -123,7 +106,7 @@ public interface LargeHashMap<K, V> {
 		 * @param key key from which a 64-bit hash code is computed
 		 * @return the 64-bit hash code for the specified key
 		 */
-		public long getLongHashCode(K key);
+		public long getLongHashCode(Object key);
 	}
 	
 	/**
@@ -133,7 +116,7 @@ public interface LargeHashMap<K, V> {
 	 * @return {@code true} if this map contains a mapping for the specified key 
 	 * @throws NullPointerException if {@code key} is null
 	 */
-	public boolean containsKey(K key);
+	public boolean containsKey(Object key);
 	
 	/** Returns the value to which the specified key is mapped, or 
 	 * {@code null} if this map contains no mapping for the key. 
@@ -146,7 +129,7 @@ public interface LargeHashMap<K, V> {
 	 * if this map contains no mapping for the key
 	 * @throws NullPointerException if {@code key} is {@code null}
 	 */
-	public V get(K key);
+	public V get(Object key);
 
 	/** Associates the specified value with the specified key in this map, 
 	 * if the specified key is not already associated with a value. 
@@ -182,7 +165,7 @@ public interface LargeHashMap<K, V> {
 	 * there was no mapping for key
 	 * @throws NullPointerException if {@code key} is null
 	 */
-	public V remove(K key);
+	public V remove(Object key);
 	
 	/**
 	 * Removes the entry for a key only if currently mapped to a given value. 
@@ -198,7 +181,7 @@ public interface LargeHashMap<K, V> {
 	 * @return {@code true} if the value was removed
 	 * @throws NullPointerException if {@code key} or {@code value} is {@code null}
 	 */
-	public boolean remove(K key, V value);
+	public boolean remove(Object key, Object value);
 	
 	/**
 	 * Replaces the entry for a key only if currently mapped to some value. This is equivalent to

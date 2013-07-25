@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.logicmill.util.KeyAdapter;
 import org.logicmill.util.LargeHashMap;
 import org.logicmill.util.LongHashable;
 import org.logicmill.util.concurrent.ConcurrentLargeHashMap;
@@ -193,9 +194,13 @@ public class ConcurrentLargeHashMapTest {
 	@Test(expected=NullPointerException.class)
 	public void testPutIfAbsentNullKey() {
 		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, 
-				new LargeHashMap.KeyAdapter<String>() {
-					public long getLongHashCode(String key) {
-						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
+				new KeyAdapter() {
+					public long getLongHashCode(Object key) {
+						if (key instanceof String) {
+							return org.logicmill.util.hash.SpookyHash64.hash((CharSequence)key,  0L);							
+						} else {
+							throw new IllegalArgumentException("key must be type String");
+						}
 					}
 				}				
 			);
@@ -830,9 +835,13 @@ public class ConcurrentLargeHashMapTest {
 	private void testConcurrentGet(int threadCount, final long getLimit, int segSize, int segCount, float loadFactor)
 			throws SegmentIntegrityException, InterruptedException, ExecutionException {
 		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(segSize, segCount, loadFactor, 
-				new LargeHashMap.KeyAdapter<String>() {
-					public long getLongHashCode(String key) {
-						return org.logicmill.util.hash.SpookyHash64.hash(key,  0L);
+				new KeyAdapter() {
+					public long getLongHashCode(Object key) {
+						if (key instanceof String) {
+							return org.logicmill.util.hash.SpookyHash64.hash((CharSequence)key,  0L);							
+						} else {
+							throw new IllegalArgumentException("key must be type String");
+						}
 					}
 				}				
 			);

@@ -106,7 +106,7 @@ import org.logicmill.util.hash.SpookyHash64;
  * {@link org.logicmill.util.LargeHashMap.KeyAdapter}{@code <K>}.
  * The map constructor accepts a key adapter as a parameter, causing that
  * adapter to be used by the map to obtain hash codes from keys. See
- * {@link #ConcurrentLargeHashMap(int, int, float, LargeHashMap.KeyAdapter)}
+ * {@link #ConcurrentLargeHashMap(int, int, float, KeyAdapter)}
  * for details and an example key adapter.
  * <h4>Default key adapter</h4> 
  * If the key class implementation permits, it can provide a 64-bit hash code
@@ -117,7 +117,7 @@ import org.logicmill.util.hash.SpookyHash64;
  * default key adapter also handles keys of type {@code CharacterSequence} 
  * (a superclass of {@code String}) without requiring a programmer-supplied 
  * key adapter. See
- * {@link #ConcurrentLargeHashMap(int, int, float, LargeHashMap.KeyAdapter)} 
+ * {@link #ConcurrentLargeHashMap(int, int, float, KeyAdapter)} 
  * for a detailed discussion of the default key adapter.
  * <p id="footnote-1">[1] See 
  * <a href="http://dx.doi.org/10.1145%2F320083.320092"> Fagin, et al, 
@@ -177,10 +177,10 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	/*
 	 * Default key adapter. 
 	 */
-	private static class KeyAdapter<K> implements LargeHashMap.KeyAdapter<K> {
+	private static class KeyAdapter implements org.logicmill.util.KeyAdapter {
 
 		@Override
-		public long getLongHashCode(K key) {
+		public long getLongHashCode(Object key) {
 			if (key instanceof LongHashable) {
 				return ((LongHashable)key).getLongHashCode();
 			} else if (key instanceof CharSequence) {
@@ -660,7 +660,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		}
 	
 		
-		private V get(K key, long hashValue) {
+		private V get(Object key, long hashValue) {
 			/*
 			 * In very high update-rate environments, it might be
 			 * necessary to limit re-tries, and go to a linear search of
@@ -770,7 +770,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 * Public remove() delegates to this method on the appropriate segment.
 		 * The segment has already been locked by the calling thread. 
 		 */
-		private V remove(K key, long hashValue, V value) {
+		private V remove(Object key, long hashValue, Object value) {
 			// assert sharedBits(hashValue) == sharedBits;
 			int bucketIndex = bucketIndex(hashValue);			
 			V resultValue = null;
@@ -1009,7 +1009,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		return i;
 	}
 
-	private final LargeHashMap.KeyAdapter<K> keyAdapter;
+	private final org.logicmill.util.KeyAdapter keyAdapter;
 	
 	/** Creates a new, empty map with the specified segment size, initial 
 	 * segment count, load threshold, and key adapter.
@@ -1088,7 +1088,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * @see org.logicmill.util.LargeHashMap.KeyAdapter
 	 */
 	public ConcurrentLargeHashMap(int segSize, int initSegCount, float loadThreshold, 
-			LargeHashMap.KeyAdapter<K> keyAdapter) {
+			org.logicmill.util.KeyAdapter keyAdapter) {
 					
 		segSize = nextPowerOfTwo(segSize);		
 		initSegCount = nextPowerOfTwo(initSegCount);
@@ -1130,7 +1130,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		directory = new AtomicReference<AtomicReferenceArray<Segment>>(dir);
 		mapEntryCount = new AtomicLong(0L);
 		
-		this.keyAdapter = keyAdapter == null ? new KeyAdapter<K>() : keyAdapter;
+		this.keyAdapter = keyAdapter == null ? new KeyAdapter() : keyAdapter;
 	}
 	
 	
@@ -1268,7 +1268,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * {@inheritDoc}
 	 */
 	@Override
-	public V get(K key) {
+	public V get(Object key) {
 		if (key == null) {
 			throw new NullPointerException();
 		}
@@ -1283,7 +1283,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * {@inheritDoc}
 	 */
 	@Override
-	public V remove(K key) {
+	public V remove(Object key) {
 		if (key == null) {
 			throw new NullPointerException();
 		}
@@ -1546,7 +1546,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * {@inheritDoc}
 	 */
 	@Override
-	public boolean containsKey(K key) {
+	public boolean containsKey(Object key) {
 		if (key == null) {
 			throw new NullPointerException();
 		}
@@ -1558,7 +1558,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * {@inheritDoc}
 	 */
 	@Override
-	public boolean remove(K key, V value) {
+	public boolean remove(Object key, Object value) {
 		if (key == null || value == null) {
 			throw new NullPointerException();
 		}
