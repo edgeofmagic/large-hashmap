@@ -66,7 +66,7 @@ public class ConcurrentLargeHashMapTest {
 		System.out.printf("\tthreshold splits %d%n", mapProbe.getThresholdSplitCount());
 	}
 	
-	public static class ByteKeyAdapter extends KeyAdapter {
+	public static class ByteKeyAdapter extends KeyAdapter<byte[]> {
 		@Override
 		public long getLongHashCode(Object key) {
 			if (key instanceof byte[]) {
@@ -77,15 +77,14 @@ public class ConcurrentLargeHashMapTest {
 		}
 		
 		@Override
-		public boolean keyEquals(Object mappedKey, Object key) {
-			if (mappedKey instanceof byte[] && key instanceof byte[]) {
-				byte[] mappedBytes = (byte[])mappedKey;
-				byte[] bytes = (byte[])key;
-				if (mappedBytes.length != bytes.length) {
+		public boolean keyEquals(byte[] mappedKey, Object key) {
+			if (key instanceof byte[]) {
+				byte[] byteKey = (byte[])key;
+				if (mappedKey.length != byteKey.length) {
 					return false;
 				}
-				for (int i = 0; i < bytes.length; i++) {
-					if (mappedBytes[i] != bytes[i]) {
+				for (int i = 0; i < byteKey.length; i++) {
+					if (mappedKey[i] != byteKey[i]) {
 						return false;
 					}
 				}
@@ -96,7 +95,7 @@ public class ConcurrentLargeHashMapTest {
 		}
 	}
 	
-	public static class StringKeyAdapter extends KeyAdapter {
+	public static class StringKeyAdapter extends KeyAdapter<String> {
 		@Override
 		public long getLongHashCode(Object key) {
 			if (key instanceof CharSequence) { 
@@ -106,15 +105,11 @@ public class ConcurrentLargeHashMapTest {
 			}
 		}
 		@Override
-		public boolean keyEquals(Object mappedKey, Object key) {
-			if (mappedKey instanceof String) {
-				if (key instanceof String) {
-					return ((String)mappedKey).equals(key);
-				} else if (key instanceof CharSequence) {
-					return ((String)mappedKey).contentEquals((CharSequence)key);
-				} else {
-					return false;
-				}
+		public boolean keyEquals(String mappedKey, Object key) {
+			if (key instanceof String) {
+				return mappedKey.equals(key);
+			} else if (key instanceof CharSequence) {
+				return mappedKey.contentEquals((CharSequence)key);
 			} else {
 				return false;
 			}
@@ -335,7 +330,7 @@ public class ConcurrentLargeHashMapTest {
 	@Test
 	public void testDefaultKeyAdapterLongHashable() throws SegmentIntegrityException {
 		final ConcurrentLargeHashMap<LongHashableString, Integer> map = 
-				new ConcurrentLargeHashMap<LongHashableString, Integer>(1024, 2, 0.8f, null);
+				new ConcurrentLargeHashMap<LongHashableString, Integer>(1024, 2, 0.8f);
 		map.putIfAbsent(new LongHashableString("hello"), new Integer(0));
 		Integer n = map.get(new LongHashableString("hel"+"lo"));
 		Assert.assertNotNull(n);
@@ -346,7 +341,7 @@ public class ConcurrentLargeHashMapTest {
 	@Test(expected=IllegalArgumentException.class)
 	public void testDefaultKeyAdapterTypeMismatch()  {
 		final ConcurrentLargeHashMap<Long, Integer> map = 
-			new ConcurrentLargeHashMap<Long, Integer>(1024, 2, 0.8f, null);
+			new ConcurrentLargeHashMap<Long, Integer>(1024, 2, 0.8f);
 		map.putIfAbsent(new Long(0L), new Integer(0));
 	}
 

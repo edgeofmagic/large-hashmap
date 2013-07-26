@@ -32,7 +32,7 @@ import java.util.Iterator;
  * for keys, values, and entries (associated key/value pairs).
  * <li>It supports 64-bit hash code values by requiring the programmer
  * to provide a <i>key adapter</i> implementing 
- * {@link LargeHashMap.KeyAdapter}{@code <K>},
+ * {@link KeyAdapter}{@code <K>},
  * to compute {@code long} hash codes for instances of the key type.
  * </ol>
  * The omissions are motivated by the impracticality of such operations on 

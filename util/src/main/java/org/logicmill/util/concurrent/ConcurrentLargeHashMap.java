@@ -175,7 +175,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	/*
 	 * Default key adapter. 
 	 */
-	private static class DefaultKeyAdapter extends org.logicmill.util.KeyAdapter {
+	private static class DefaultKeyAdapter<K> extends org.logicmill.util.KeyAdapter<K> {
 
 		@Override
 		public long getLongHashCode(Object key) {
@@ -1005,7 +1005,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		return i;
 	}
 
-	private final org.logicmill.util.KeyAdapter keyAdapter;
+	private final KeyAdapter<K> keyAdapter;
 	
 	/** Creates a new, empty map with the specified segment size, initial 
 	 * segment count, load threshold, and key adapter.
@@ -1084,7 +1084,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * @see org.logicmill.util.KeyAdapter
 	 */
 	public ConcurrentLargeHashMap(int segSize, int initSegCount, float loadThreshold, 
-			KeyAdapter keyAdapter) {
+			KeyAdapter<K> keyAdapter) {
 					
 		segSize = nextPowerOfTwo(segSize);		
 		initSegCount = nextPowerOfTwo(initSegCount);
@@ -1107,6 +1107,10 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			loadThreshold = MAX_LOAD_THRESHOLD;
 		}
 		
+		if (keyAdapter == null) {
+			throw new NullPointerException("keyAdapter must be non-null");
+		}
+		
 		int initDirCapacity = initSegCount;
 		segmentCount = initSegCount;
 		forcedSplitCount = new AtomicInteger(0);
@@ -1126,10 +1130,12 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		directory = new AtomicReference<AtomicReferenceArray<Segment>>(dir);
 		mapEntryCount = new AtomicLong(0L);
 		
-		this.keyAdapter = keyAdapter == null ? new DefaultKeyAdapter() : keyAdapter;
+		this.keyAdapter = keyAdapter;
 	}
 	
-	
+	public ConcurrentLargeHashMap(int segSize, int initSegCount, float loadThreshold) {
+		this(segSize, initSegCount, loadThreshold, new DefaultKeyAdapter<K>());
+	}
 
 	/**
 	 * {@inheritDoc}
