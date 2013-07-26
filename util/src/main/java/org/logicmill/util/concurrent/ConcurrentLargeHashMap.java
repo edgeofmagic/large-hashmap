@@ -25,9 +25,9 @@ import java.util.BitSet;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
+import org.logicmill.util.KeyAdapter;
 import org.logicmill.util.LargeHashMap;
 import org.logicmill.util.LongHashable;
-import org.logicmill.util.hash.SpookyHash64;
 
 /** 
  * A concurrent hash map that scales well to large data sets.
@@ -35,18 +35,17 @@ import org.logicmill.util.hash.SpookyHash64;
  * All operations are thread-safe. Retrieval operations ({@code get}, 
  * {@code containsKey}, and iterator traversal) do not entail locking; they 
  * execute concurrently with update operations. Update operations ({@code put},
- * {@code putIfAbsent} and {@code remove}) may block if overlapping updates are
- * attempted on the same segment. Segmentation is configurable, so the 
- * probability of update blocking is (to a degree) under the programmer's 
- * control. Retrievals reflect the result of update operations that complete 
- * before the onset of the retrieval, and may also reflect the state 
- * of update operations that complete after the onset of the retrieval. 
+ * {@code putIfAbsent}, {@code replace} and {@code remove}) may block if 
+ * overlapping updates are attempted on the same segment. Segmentation is 
+ * configurable, so the probability of update blocking is (to a degree) under 
+ * the programmer's control. Retrievals reflect the result of update operations 
+ * that complete before the onset of the retrieval, and may also reflect the 
+ * state of update operations that complete after the onset of the retrieval. 
  * Iterators do not throw {@link java.util.ConcurrentModificationException}.
  * If an entry is contained in the map prior to the iterator's creation and
- * it is not removed before the iterator is exhausted (that is, 
- * {@code hasNext()} returns {@code false}), it will be returned by the 
- * iterator. The entries returned by an iterator may or may not reflect updates
- * that occur after the iterator's creation.
+ * it is not removed before the iterator is exhausted, it will be returned by 
+ * the iterator. The entries returned by an iterator may or may not reflect 
+ * updates that occur after the iterator's creation.
  * Iterators themselves are not thread-safe; although iterators can be used 
  * concurrently with operations on the map and other iterators, an iterator 
  * should not be used by multiple threads.
@@ -66,7 +65,8 @@ import org.logicmill.util.hash.SpookyHash64;
  * a lock on the directory to assign references to the new segments in the 
  * directory. If a split forces the directory to expand, the updating thread 
  * keeps the directory locked during expansion. A directory lock will not block 
- * a concurrent update unless that update forces a segment split.
+ * a concurrent update unless that update forces a segment split. Directory
+ * locks do not affect retrievals.
  * <h3>Hopscotch Hashing</h3>
  * This implementation uses Hopscotch hashing <a href="#footnote-3">[3]</a> 
  * within segments for conflict resolution. Hopscotch hashing is similar to 
@@ -102,10 +102,8 @@ import org.logicmill.util.hash.SpookyHash64;
  * provided. <i>Key adapters</i> are helper classes that compute 64-bit hash 
  * codes for specific key types, allowing a class to be used as a key when it 
  * is not practical or possible to modify or extend the key class itself. Key
- * adapters implement the interface 
- * {@link org.logicmill.util.LargeHashMap.KeyAdapter}{@code <K>}.
- * The map constructor accepts a key adapter as a parameter, causing that
- * adapter to be used by the map to obtain hash codes from keys. See
+ * adapters implement the interface {@link org.logicmill.util.KeyAdapter}.
+ * The map constructor accepts a key adapter as a parameter. See
  * {@link #ConcurrentLargeHashMap(int, int, float, KeyAdapter)}
  * for details and an example key adapter.
  * <h4>Default key adapter</h4> 
@@ -177,16 +175,14 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	/*
 	 * Default key adapter. 
 	 */
-	private static class KeyAdapter implements org.logicmill.util.KeyAdapter {
+	private static class DefaultKeyAdapter extends org.logicmill.util.KeyAdapter {
 
 		@Override
 		public long getLongHashCode(Object key) {
 			if (key instanceof LongHashable) {
 				return ((LongHashable)key).getLongHashCode();
-			} else if (key instanceof CharSequence) {
-				return SpookyHash64.hash((CharSequence)key, 0L);
 			} else {
-				throw new IllegalArgumentException("key must be CharSequence or instanceof LongHashable");
+				throw new IllegalArgumentException("key must implement org.logicmill.util.LongHashable");
 			}
 		}
 	}
@@ -604,7 +600,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			while (nextOffset != NULL_OFFSET) {
 				int entryIndex = wrapIndex(bucketIndex + nextOffset);
 				Entry<K,V> entry = entries.get(entryIndex);
-				if (entry.getHashCode() == hashCode  && entry.getKey().equals(key)) {
+				if (entry.getHashCode() == hashCode  && keyAdapter.keyEquals(entry.getKey(),key)) {
 					if (oldValue != null && !
 							oldValue.equals(entry.getValue())) {
 						/*
@@ -640,7 +636,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			while (nextOffset != NULL_OFFSET) {
 				int entryIndex = wrapIndex(bucketIndex + nextOffset);
 				Entry<K,V> entry = entries.get(entryIndex);
-				if (entry.getHashCode() == hashCode  && entry.getKey().equals(key)) {
+				if (entry.getHashCode() == hashCode  && keyAdapter.keyEquals(entry.getKey(),key)) {
 					if (replaceIfPresent) {
 						Entry<K,V> newEntry = new Entry<K,V>(key, value, hashCode);
 						entries.set(entryIndex, newEntry);
@@ -692,7 +688,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 							localRetrys++;
 							continue retry;
 						}
-						if (entry.getHashCode() == hashValue && entry.getKey().equals(key)) {
+						if (entry.getHashCode() == hashValue && keyAdapter.keyEquals(entry.getKey(),key)) {
 							return entry.getValue();
 						}
 						nextOffset = offsets.get(nextIndex);
@@ -785,7 +781,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			int nextIndex = wrapIndex(bucketIndex + nextOffset);
 			Entry<K,V> entry = entries.get(nextIndex);
 			// assert entry != null;
-			if (entry.getHashCode() == hashValue && entry.getKey().equals(key)) {
+			if (entry.getHashCode() == hashValue && keyAdapter.keyEquals(entry.getKey(),key)) {
 				/*
 				 * First entry in the bucket was the key to be removed.
 				 */
@@ -826,7 +822,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 				nextIndex = wrapIndex(bucketIndex + nextOffset);
 				nextOffset = offsets.get(nextIndex);
 				entry = entries.get(nextIndex);
-				if (entry.getHashCode() == hashValue && entry.getKey().equals(key)) {
+				if (entry.getHashCode() == hashValue && keyAdapter.keyEquals(entry.getKey(),key)) {
 					resultValue =  entry.getValue();
 					if (value != null && !value.equals(resultValue)) {
 						return null;
@@ -1021,8 +1017,8 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * <li>The initial segment count determines the initial limit of update 
 	 * concurrency. As the map expands, so does the opportunity for update 
 	 * concurrency.
-	 * <li>The cost of a segment split, and the duration of the lock on a segment
-	 * being split, are proportional to segment size.
+	 * <li>The cost of a segment split and the duration of the lock on a segment
+	 * being split are proportional to segment size.
 	 * <li>Given a constant map growth rate, the frequency of segment splits is 
 	 * inversely proportional to segment size.
 	 * <li>For a given map size, directory size is inversely proportional 
@@ -1050,7 +1046,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * <h4>Key adapters</h4> 
 	 * To enable 64-bit hash codes, the programmer may provide a 
 	 * <i>key adapter</i> class that implements
-	 * {@link org.logicmill.util.LargeHashMap.KeyAdapter}{@code <K>} for the 
+	 * {@link org.logicmill.util.KeyAdapter}{@code <K>} for the 
 	 * key type {@code K}. For example, if it were necessary to use keys of 
 	 * type {@link java.math.BigInteger}:<pre><code>
 	 * ConcurrentLargeHashMap&lt;BigInteger, String&gt; map = 
@@ -1085,10 +1081,10 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * @param keyAdapter adapter to generate 64-bit hash code values from keys,
 	 * or {@code null} to employ the default key adapter
 	 * 
-	 * @see org.logicmill.util.LargeHashMap.KeyAdapter
+	 * @see org.logicmill.util.KeyAdapter
 	 */
 	public ConcurrentLargeHashMap(int segSize, int initSegCount, float loadThreshold, 
-			org.logicmill.util.KeyAdapter keyAdapter) {
+			KeyAdapter keyAdapter) {
 					
 		segSize = nextPowerOfTwo(segSize);		
 		initSegCount = nextPowerOfTwo(initSegCount);
@@ -1130,7 +1126,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		directory = new AtomicReference<AtomicReferenceArray<Segment>>(dir);
 		mapEntryCount = new AtomicLong(0L);
 		
-		this.keyAdapter = keyAdapter == null ? new KeyAdapter() : keyAdapter;
+		this.keyAdapter = keyAdapter == null ? new DefaultKeyAdapter() : keyAdapter;
 	}
 	
 	

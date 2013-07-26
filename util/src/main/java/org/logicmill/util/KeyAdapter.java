@@ -20,7 +20,7 @@ package org.logicmill.util;
  * @author David Curtis
  *
  */
-public interface KeyAdapter {
+public abstract class KeyAdapter {
 	
 	/** Compute a 64-bit hash code for the specified key.
 	 * <p>The contract for {@code getLongHashCode(Object key)} is essentially the 
@@ -42,5 +42,9 @@ public interface KeyAdapter {
 	 * @param key key from which a 64-bit hash code is computed
 	 * @return the 64-bit hash code for the specified key
 	 */
-	public long getLongHashCode(Object key);
+	public abstract long getLongHashCode(Object key);
+	
+	public boolean keyEquals(Object mappedKey, Object key) {
+		return mappedKey.equals(key);
+	}
 }

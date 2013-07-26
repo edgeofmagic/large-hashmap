@@ -71,44 +71,6 @@ public interface LargeHashMap<K, V> {
 		public V getValue();
 	}
 	
-	/** An object that produces 64-bit hash code values for instances of the
-	 * specified key type. Because there is no 64-bit cognate of 
-	 * {@link Object#hashCode()}, implementations of {@code LargeHashMap} 
-	 * require the programmer to provide a key adapter through which the map 
-	 * may obtain long hash codes from keys. Implementations of {@code 
-	 * LargeHashMap} must provide a means of associating a key adapter with a
-	 * map. Typically, a hash map constructor accepts a parameter of type 
-	 * {@code LargeHashMap.KeyAdapter<K>}.
-	 * 
-	 * @author David Curtis
-	 *
-	 * @param <K> the type of key for which long hash codes are computed
-	 */
-	public interface KeyAdapter {
-		
-		/** Compute a 64-bit hash code for the specified key.
-		 * <p>The contract for {@code getHashCode(K key)} is essentially the 
-		 * same as {@link Object#hashCode()}:
-		 * <ul> 
-		 * <li> Whenever it is invoked on the same key more than once during 
-		 * an execution of a Java application, {@code getHashCode()} 
-		 * must consistently return the same {@code long} value, provided 
-		 * no information used in {@code equals(Object)} comparisons on the 
-		 * key is modified. This {@code long} value need not remain consistent
-		 * from one execution of an application to another.
-		 * <li> If two keys are equal according to {@code equals(Object)}, 
-		 * then calling the {@code getHashCode(K key)} method with each of 
-		 * the two keys must produce the same result.
-		 * <li> It is <i>not</i> required that if two keys are unequal 
-		 * according to {@code Object.equals(Object)}, then calling the 
-		 * {@code getHashCode()} method on each of the two keys must 
-		 * produce distinct results. 
-		 * @param key key from which a 64-bit hash code is computed
-		 * @return the 64-bit hash code for the specified key
-		 */
-		public long getLongHashCode(Object key);
-	}
-	
 	/**
 	 * Returns {@code true} if this map contains a mapping for the specified key. Null
 	 * key values are not permitted.
