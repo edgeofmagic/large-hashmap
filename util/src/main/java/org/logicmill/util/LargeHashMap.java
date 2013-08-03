@@ -75,37 +75,6 @@ import java.util.Iterator;
  * on key adapters for comparing keys.
  * </ul>
  * 
- * 
- * 
- * <p>In the Java Collections Framework, methods that require comparisons between 
- * keys stored in the map and keys provided as parameters (such as 
- * {@code get(Object key)} define their behavior in terms of 
- * {@code Object.equals(Object)}. {@code LargeHashMap} relaxes this definition
- * by using the method 
- * {@code KeyAdapter<K>.keyMatches(K mapKey, Object key)} to determine
- * when a key parameter matches a key stored in the map. {@code keyMatches}
- * does not impose the same requirements as {@code equals}, allowing compatible
- * (but not identical) types to be used as key parameters more easily.<p>
- * An implementation of {@code LargeHashMap} must provide a way to associate
- * a key adapter with a map instance, for example, by providing
- * a map constructor that takes a key adapter parameter.
- * <p>
- * Some controversy has circulated regarding the decision by the authors of the
- * Java Collections Framework to specify the parameters for {@code get},
- * {@code remove}, and {@code containsKey} as type {@code Object} rather than
- * the parameterized key type for the map ({@code <K>}). {@code LargeHashMap}
- * follows the pattern of the collections framework, and extends it to include
- * the key parameters of {@code replace} methods. The basis for the distinction
- * between using the parameterized key type or {@code Object} type in a method
- * signature is this: when the key parameter can possibly be stored in the map
- * by the method in question (that is, in {@code put} and {@code putIfAbsent}), 
- * it is the parameterized type; otherwise it is used only for matching (as
- * in {@code get}, {@code containsKey}, and {@code remove}), so it is type 
- * {@code Object}. Since the key parameter of the {@code replace}
- * methods in {@code LargeHashMap} is used only for matching (the key stored
- * in the map is not replaced, only the value), the key parameter in their 
- * signatures is type {@code Object}.
- * 
  * @author David Curtis
  *
  * @param <K> type of the keys maintained in this map
