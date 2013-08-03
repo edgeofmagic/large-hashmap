@@ -41,6 +41,7 @@ When a segment reaches the load factor threshold it splits into two
 segments. When a split would exceed directory capacity, the directory 
 doubles in size. The current implementation does not merge segments to 
 reduce capacity as entries are removed. 
+
 <h4>Concurrency during splits and directory expansion</h4>
 Ellis<a href="#footnote-2"><sup>[2]</sup></a> describes strategies for concurrent 
 operations on extendible hash tables. The strategy used in this project is informed
@@ -50,6 +51,7 @@ a lock on the directory to assign references to the new segments in the
 directory. If a split forces the directory to expand, the updating thread 
 keeps the directory locked during expansion. A directory lock will not block 
 a concurrent update unless that update forces a segment split.
+
 <h3>Hopscotch Hashing</h3>
 This implementation uses Hopscotch hashing
 within segments for collision resolution. Hopscotch hashing is similar to 
@@ -64,26 +66,23 @@ Hopscotch hashing was designed to support a high degree of concurrency,
 including non-blocking retrieval. This implementation follows the 
 concurrency strategies described in the originating papers, with minor 
 variations.
-<h3>Long Hash Codes</h3>
+
+<h3>Long Hash Codes and Key Adapters</h3>
 ConcurrentLargeHashMap is designed to support hash maps that can expand to very 
 large size (> 2<sup>32</sup> items). To that end, it uses 64-bit hash codes.
-Lacking a universally available 64-bit cognate of `Object.hashCode()`, this project
-defines two alternatives for producing 64-bit hash codes from objects.
-If circumstances permit, a class to be used as a key may directly implement
-the `org.logicmill.util.LargeHashable`interface. In cases where it is not practical or possible to modify or
-extend the key class directly, this project relies on *key adapters*&mdash;helper classes
-that compute long hash codes for specific key types. Key adapters can often be implemented
-concisely with anonymous classes, provided when the map is constructed. Keys of
-type `CharSequence` (which includes keys of type `String`) can be used without a
-key adapter.
+Lacking a 64-bit cognate of `Object.hashCode()`, this project defines a
+*key adapter* interface that acts as an intermediary between keys
+and the hash map. The hash map uses a key adapter to obtain 64-bit 
+hash codes for keys, and to perform matching operations between keys
+stored in the map and keys passed as method parameters. 
+
 <h4>SpookyHash</h4>
-Because array indices within a segment consist of bit fields
-extracted directly from hash code values, it is important to choose a hash 
-function that reliably exhibits avalanche and uniform distribution. 
-An implementation of Bob Jenkins' SpookyHash V2<a href="#footnote-4"><sup>[4]</sup></a> 
+The quality of the hash function used with the hash map directly 
+affects overall performance. An implementation of Bob Jenkins' 
+SpookyHash V2<a href="#footnote-4"><sup>[4]</sup></a> 
 algorithm is included in this project, and is highly recommended. The performance
 of SpookyHash, with respect to both speed and the statistical properties of 
-the resulting hash codes, campares favorably among
+the resulting hash codes, compares favorably among
 hashing algorithms that produce 64- or 128-bit results.
 <p id="footnote-1"><sup>[1]</sup> <a href="http://dx.doi.org/10.1145%2F320083.320092"> Fagin, et al, 
 "Extendible Hashing - A Fast Access Method for Dynamic Files", 
