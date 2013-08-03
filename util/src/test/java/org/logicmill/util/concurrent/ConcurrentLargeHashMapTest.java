@@ -35,7 +35,6 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.logicmill.util.KeyAdapter;
 import org.logicmill.util.LargeHashMap;
 import org.logicmill.util.LongHashable;
 import org.logicmill.util.concurrent.ConcurrentLargeHashMap;
@@ -66,7 +65,7 @@ public class ConcurrentLargeHashMapTest {
 		System.out.printf("\tthreshold splits %d%n", mapProbe.getThresholdSplitCount());
 	}
 	
-	public static class ByteKeyAdapter extends KeyAdapter<byte[]> {
+	public static class ByteKeyAdapter implements LargeHashMap.KeyAdapter<byte[]> {
 		@Override
 		public long getLongHashCode(Object key) {
 			if (key instanceof byte[]) {
@@ -77,25 +76,19 @@ public class ConcurrentLargeHashMapTest {
 		}
 		
 		@Override
-		public boolean keyEquals(byte[] mappedKey, Object key) {
+		public boolean keyMatches(byte[] mappedKey, Object key) {
 			if (key instanceof byte[]) {
 				byte[] byteKey = (byte[])key;
-				if (mappedKey.length != byteKey.length) {
-					return false;
-				}
+				if (mappedKey.length != byteKey.length) return false;
 				for (int i = 0; i < byteKey.length; i++) {
-					if (mappedKey[i] != byteKey[i]) {
-						return false;
-					}
+					if (mappedKey[i] != byteKey[i]) return false;
 				}
 				return true;
-			} else {
-				return false;
-			}
+			} else return false;
 		}
 	}
 	
-	public static class StringKeyAdapter extends KeyAdapter<String> {
+	public static class StringKeyAdapter implements LargeHashMap.KeyAdapter<String> {
 		@Override
 		public long getLongHashCode(Object key) {
 			if (key instanceof CharSequence) { 
@@ -105,7 +98,7 @@ public class ConcurrentLargeHashMapTest {
 			}
 		}
 		@Override
-		public boolean keyEquals(String mappedKey, Object key) {
+		public boolean keyMatches(String mappedKey, Object key) {
 			if (key instanceof String) {
 				return mappedKey.equals(key);
 			} else if (key instanceof CharSequence) {
@@ -131,7 +124,7 @@ public class ConcurrentLargeHashMapTest {
 		Assert.assertNotNull(value);
 		Assert.assertEquals(1L, value.intValue());	
 	}
-	
+		
 	/*
 	 * Runs concurrent put test with 8 threads. If the test system has a larger number of cores, consider increasing
 	 * the thread count.
@@ -538,58 +531,6 @@ public class ConcurrentLargeHashMapTest {
 	}
 	
 	
-	/*
-	 * Confirms that the iterator returned by getKeyIterator() functions properly; specifically, that
-	 * all keys in the map are returned by the iterator, and that hasNext() returns true until the
-	 * iterator is exhausted, and false afterward.
-	 */
-	@Test
-	public void testKeyIterator() {
-		RandomKeySet keySet = new RandomKeySet(100000, 128, 1337L);
-		final ConcurrentLargeHashMap<byte[], Integer> map = 
-				new ConcurrentLargeHashMap<byte[], Integer>(4096, 8, 0.8f, byteAdapter);
-		HashSet<byte[]> intoMap = new HashSet<byte[]>();
-		int i = 0;
-		while (keySet.hasMoreKeys()) {
-			byte[] key = keySet.getKey();
-			intoMap.add(key);
-			map.put(key, i++);
-		}
-		HashSet<byte[]> fromMap = new HashSet<byte[]>();
-		Iterator<byte[]> keyIter = map.getKeyIterator();
-		while (keyIter.hasNext()) {
-			fromMap.add(keyIter.next());
-		}
-		Assert.assertEquals(intoMap, fromMap);
-	}
-	
-	/*
-	 * Confirms that the KeyIterator.remove() method throws an UnsupportedOperationException
-	 */
-	@Test(expected=UnsupportedOperationException.class)
-	public void testKeyIteratorRemove() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(4096, 8, 0.8f, stringAdapter);
-		map.put("Hello", 1);
-		Iterator<String> keyIter = map.getKeyIterator();
-		Assert.assertTrue(keyIter.hasNext());
-		String key = keyIter.next();
-		Assert.assertEquals("Hello", key);
-		keyIter.remove();
-	}
-	
-	/*
-	 * Confirms that calling KeyIterator.next() after exhaustion throws a NoSuchElementException
-	 */
-	@Test(expected=NoSuchElementException.class)
-	public void testKeyIteratorExhaustion() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(4096, 8, 0.8f, stringAdapter);
-		map.put("Hello", 1);
-		Iterator<String> keyIter = map.getKeyIterator();
-		@SuppressWarnings("unused")
-		String key = keyIter.next();
-		key = keyIter.next();
-	}
-
 
 
 	/*
@@ -651,56 +592,6 @@ public class ConcurrentLargeHashMapTest {
 	}
 
 	
-	/*
-	 * Confirms that the iterator returned by getValueIterator() functions properly; specifically, that
-	 * all values in the map are returned by the iterator, and that hasNext() returns true until the
-	 * iterator is exhausted, and false afterward.
-	 */
-	@Test
-	public void testValueIterator() {
-		RandomKeySet keySet = new RandomKeySet(100000, 128, 1337L);
-		final ConcurrentLargeHashMap<byte[], Integer> map = 
-				new ConcurrentLargeHashMap<byte[], Integer>(4096, 8, 0.8f, byteAdapter);
-		HashSet<Integer> intoMap = new HashSet<Integer>();
-		int i = 0;
-		while(keySet.hasMoreKeys()) {
-			intoMap.add(i);
-			map.put(keySet.getKey(), i++);
-		}
-		HashSet<Integer> fromMap = new HashSet<Integer>();
-		Iterator<Integer> valIter = map.getValueIterator();
-		while (valIter.hasNext()) {
-			fromMap.add(valIter.next());
-		}
-		Assert.assertEquals(intoMap, fromMap);		
-	}
-
-	/*
-	 * Confirms that the ValueIterator.remove() method throws an UnsupportedOperationException
-	 */
-	@Test(expected=UnsupportedOperationException.class)
-	public void testValueIteratorRemove() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(4096, 8, 0.8f, stringAdapter);
-		map.put("Hello", 1);
-		Iterator<Integer> valueIter = map.getValueIterator();
-		@SuppressWarnings("unused")
-		Integer value = valueIter.next();
-		valueIter.remove();
-	}
-
-	/*
-	 * Confirms that calling ValueIterator.next() after exhaustion throws a NoSuchElementException
-	 */
-	@Test(expected=NoSuchElementException.class)
-	public void testValueIteratorExhaustion() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(4096, 8, 0.8f, stringAdapter);
-		map.put("Hello", 1);
-		Iterator<Integer> valueIter = map.getValueIterator();
-		@SuppressWarnings("unused")
-		Integer value = valueIter.next();
-		value = valueIter.next();
-	}
-
 
 	
 	/*
@@ -1030,10 +921,10 @@ public class ConcurrentLargeHashMapTest {
 			@Override
 			public LinkedList<byte[]> call() throws InterruptedException {
 				LinkedList<byte[]> observed = new LinkedList<byte[]>();
-				Iterator<byte[]> keyIter = map.getKeyIterator();
+				Iterator<LargeHashMap.Entry<byte[],Integer>> entryIter = map.getEntryIterator();
 				iteratorStarted.set(true);
-				while (keyIter.hasNext()) {
-					observed.add(keyIter.next());
+				while (entryIter.hasNext()) {
+					observed.add(entryIter.next().getKey());
 				}
 				iteratorFinished.set(true);
 				return observed;

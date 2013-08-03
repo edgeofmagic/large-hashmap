@@ -25,7 +25,6 @@ import java.util.BitSet;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-import org.logicmill.util.KeyAdapter;
 import org.logicmill.util.LargeHashMap;
 import org.logicmill.util.LongHashable;
 
@@ -97,26 +96,16 @@ import org.logicmill.util.LongHashable;
  * {@link org.logicmill.util.hash.SpookyHash64}) is available in conjunction 
  * with ConcurrentLargeHashMap, and is highly recommended.
  * <h4>Key adapters</h4>
- * Lacking a universally available 64-bit cognate of {@code Object.hashCode()},
- * some generalized means for obtaining 64-bit hash codes from keys must be
- * provided. <i>Key adapters</i> are helper classes that compute 64-bit hash 
- * codes for specific key types, allowing a class to be used as a key when it 
- * is not practical or possible to modify or extend the key class itself. Key
- * adapters implement the interface {@link org.logicmill.util.KeyAdapter}.
- * The map constructor accepts a key adapter as a parameter. See
- * {@link #ConcurrentLargeHashMap(int, int, float, KeyAdapter)}
- * for details and an example key adapter.
- * <h4>Default key adapter</h4> 
- * If the key class implementation permits, it can provide a 64-bit hash code
- * directly by implementing the {@link LongHashable} interface. When the map
- * is constructed with a {@code null} key adapter, it uses a default key adapter 
- * implementation that will attempt to cast a key to {@code LongHashable} and 
- * obtain a 64-bit hash code by invoking {@code key.getLongHashCode()}. The 
- * default key adapter also handles keys of type {@code CharacterSequence} 
- * (a superclass of {@code String}) without requiring a programmer-supplied 
- * key adapter. See
- * {@link #ConcurrentLargeHashMap(int, int, float, KeyAdapter)} 
- * for a detailed discussion of the default key adapter.
+ * {@code ConcurrentLargeHashMap} uses key adapters (see {@link 
+ * org.logicmill.util.LargeHashMap.KeyAdapter}) to obtain 64-bit hash codes 
+ * from keys, and to perform matching comparisons on keys. A reference to a key 
+ * adapter implementation can be passed as a parameter to the constructor 
+ * {@link #ConcurrentLargeHashMap(int, int, float, LargeHashMap.KeyAdapter)}.
+ * {@code ConcurrentLargeHashMap} also provides a default key adapter 
+ * implementation that expects keys to implement {@link LongHashable}, and
+ * uses {@code Object.equals()} for key matching. The default key adapter
+ * is used when the map is constructed with 
+ * {@link #ConcurrentLargeHashMap(int, int, float)}.
  * <p id="footnote-1">[1] See 
  * <a href="http://dx.doi.org/10.1145%2F320083.320092"> Fagin, et al, 
  * "Extendible Hashing - A Fast Access Method for Dynamic Files", 
@@ -175,7 +164,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	/*
 	 * Default key adapter. 
 	 */
-	private static class DefaultKeyAdapter<K> extends org.logicmill.util.KeyAdapter<K> {
+	private static class DefaultKeyAdapter<K> implements LargeHashMap.KeyAdapter<K> {
 
 		@Override
 		public long getLongHashCode(Object key) {
@@ -184,6 +173,11 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			} else {
 				throw new IllegalArgumentException("key must implement org.logicmill.util.LongHashable");
 			}
+		}
+
+		@Override
+		public boolean keyMatches(K mapKey, Object key) {
+			return mapKey.equals(key);
 		}
 	}
 	
@@ -587,11 +581,11 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		}
 		
 		/*
-		 * Implements replace(K key, V value) and replace (K key, V oldValue, V newValue).
+		 * Implements replace(Object key, V value) and replace (Object key, V oldValue, V newValue).
 		 * If oldValue is null, treat it as replace(key, value), otherwise, only replace
 		 * if existing entry value equals oldValue.
 		 */
-		private V replace(K key, long hashCode, V oldValue, V newValue) {
+		private V replace(Object key, long hashCode, V oldValue, V newValue) {
 			int bucketIndex = bucketIndex(hashCode);
 			/*
 			 * Search for entry with key
@@ -600,7 +594,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			while (nextOffset != NULL_OFFSET) {
 				int entryIndex = wrapIndex(bucketIndex + nextOffset);
 				Entry<K,V> entry = entries.get(entryIndex);
-				if (entry.getHashCode() == hashCode  && keyAdapter.keyEquals(entry.getKey(),key)) {
+				if (entry.getHashCode() == hashCode  && keyAdapter.keyMatches(entry.getKey(),key)) {
 					if (oldValue != null && !
 							oldValue.equals(entry.getValue())) {
 						/*
@@ -608,7 +602,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 						 */
 						return null;
 					} else {
-						Entry<K,V> newEntry = new Entry<K,V>(key, newValue, hashCode);
+						Entry<K,V> newEntry = new Entry<K,V>(entry.getKey(), newValue, hashCode);
 						entries.set(entryIndex, newEntry);
 					}
 					return entry.getValue();						
@@ -636,7 +630,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			while (nextOffset != NULL_OFFSET) {
 				int entryIndex = wrapIndex(bucketIndex + nextOffset);
 				Entry<K,V> entry = entries.get(entryIndex);
-				if (entry.getHashCode() == hashCode  && keyAdapter.keyEquals(entry.getKey(),key)) {
+				if (entry.getHashCode() == hashCode  && keyAdapter.keyMatches(entry.getKey(),key)) {
 					if (replaceIfPresent) {
 						Entry<K,V> newEntry = new Entry<K,V>(key, value, hashCode);
 						entries.set(entryIndex, newEntry);
@@ -688,7 +682,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 							localRetrys++;
 							continue retry;
 						}
-						if (entry.getHashCode() == hashValue && keyAdapter.keyEquals(entry.getKey(),key)) {
+						if (entry.getHashCode() == hashValue && keyAdapter.keyMatches(entry.getKey(),key)) {
 							return entry.getValue();
 						}
 						nextOffset = offsets.get(nextIndex);
@@ -781,7 +775,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			int nextIndex = wrapIndex(bucketIndex + nextOffset);
 			Entry<K,V> entry = entries.get(nextIndex);
 			// assert entry != null;
-			if (entry.getHashCode() == hashValue && keyAdapter.keyEquals(entry.getKey(),key)) {
+			if (entry.getHashCode() == hashValue && keyAdapter.keyMatches(entry.getKey(),key)) {
 				/*
 				 * First entry in the bucket was the key to be removed.
 				 */
@@ -822,7 +816,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 				nextIndex = wrapIndex(bucketIndex + nextOffset);
 				nextOffset = offsets.get(nextIndex);
 				entry = entries.get(nextIndex);
-				if (entry.getHashCode() == hashValue && keyAdapter.keyEquals(entry.getKey(),key)) {
+				if (entry.getHashCode() == hashValue && keyAdapter.keyMatches(entry.getKey(),key)) {
 					resultValue =  entry.getValue();
 					if (value != null && !value.equals(resultValue)) {
 						return null;
@@ -1005,7 +999,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		return i;
 	}
 
-	private final KeyAdapter<K> keyAdapter;
+	private final LargeHashMap.KeyAdapter<K> keyAdapter;
 	
 	/** Creates a new, empty map with the specified segment size, initial 
 	 * segment count, load threshold, and key adapter.
@@ -1043,45 +1037,14 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * results in roughly equal segment and directory sizes at expected capacity. 
 	 * Note that, if the specified segment size is not a power of two, it will be 
 	 * forced to the next largest power of two.
-	 * <h4>Key adapters</h4> 
-	 * To enable 64-bit hash codes, the programmer may provide a 
-	 * <i>key adapter</i> class that implements
-	 * {@link org.logicmill.util.KeyAdapter}{@code <K>} for the 
-	 * key type {@code K}. For example, if it were necessary to use keys of 
-	 * type {@link java.math.BigInteger}:<pre><code>
-	 * ConcurrentLargeHashMap&lt;BigInteger, String&gt; map = 
-	 * new ConcurrentLargeHashMap&lt;BigInteger, String&gt;(8192, 8, 0.8f, 
-	 * 	new LargeHashMap.KeyAdapter&lt;BigInteger&gt;() {
-	 * 		public long getHashCode(BigInteger key) {
-	 * 			return org.logicmill.util.hash.SpookyHash64.hash(key.toByteArray, 0L);
-	 *		}
-	 *	}
-	 * );</code></pre>
-	 * <h4>Default key adapter</h4>
-	 * If {@code keyAadpter} is {@code null}, the map will use a default key 
-	 * adapter. The default key adapter implementation attempts to do something 
-	 * reasonable based on the run-time type of the key, accommodating the 
-	 * following use cases:
-	 * <ul>
-	 * <li> If the key can be cast to {@link LongHashable}, the default
-	 * adapter method {@code getLongHashCode()} returns {@code 
-	 * ((LongHashable)key).getLongHashCode()}.
-	 * <li> If the key can be cast to {@link CharSequence}, the default
-	 * adapter method {@code getLongHashCode()} returns {@code 
-	 * SpookyHash64.hash((CharSequence)key, 0L)}.
-	 * </ul>
-	 * Otherwise, any operation on the map that requires a key will throw
-	 * an {@link IllegalArgumentException}.
-	 * 
 	 *  
 	 * @param segSize size of segments, forced to the next largest power of two
 	 * @param initSegCount number of segments created initially
 	 * @param loadThreshold fractional threshold for map growth, observed at 
 	 * the segment level
-	 * @param keyAdapter adapter to generate 64-bit hash code values from keys,
-	 * or {@code null} to employ the default key adapter
+	 * @param keyAdapter key adapter to be used by this map instance
 	 * 
-	 * @see org.logicmill.util.KeyAdapter
+	 * @see org.logicmill.util.LargeHashMap.KeyAdapter
 	 */
 	public ConcurrentLargeHashMap(int segSize, int initSegCount, float loadThreshold, 
 			KeyAdapter<K> keyAdapter) {
@@ -1133,6 +1096,28 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		this.keyAdapter = keyAdapter;
 	}
 	
+	/** Creates a new, empty map with the specified segment size, initial 
+	 * segment count, load threshold, and a default key adapter 
+	 * implementation (see {@link 
+	 * #ConcurrentLargeHashMap(int, int, float, LargeHashMap.KeyAdapter)} for
+	 * a discussion of segmentation issues).
+	 * <h4>Default key adapter</h4>
+	 * The default key adapter implementation expects key objects to implement
+	 * {@link LongHashable}. Specifically:
+	 * <ul>
+	 * <li> If the key can be cast to {@link LongHashable}, the default
+	 * key adapter implementation of {@code getLongHashCode()} returns {@code 
+	 * ((LongHashable)key).getLongHashCode()}. Otherwise, a
+	 * {@code ClassCastException} is thrown.
+	 * <li> The default key adapter implementation of 
+	 * {@code keyMatches(K mappedKey, Object key)} delegates to {@code
+	 * mappedKey.equals(key)}.
+	 * </ul>
+	 * @param segSize size of segments, forced to the next largest power of two
+	 * @param initSegCount number of segments created initially
+	 * @param loadThreshold fractional threshold for map growth, observed at 
+	 * the segment level
+	 */
 	public ConcurrentLargeHashMap(int segSize, int initSegCount, float loadThreshold) {
 		this(segSize, initSegCount, loadThreshold, new DefaultKeyAdapter<K>());
 	}
@@ -1199,7 +1184,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 				if (GATHER_EVENT_DATA) {
 					split[0].copyMetrics(seg);
 				}
-				V result = null;
+				V result;
 				try {
 					if (split[0].sharedBitsMatchSegment(hashCode)) {
 						result = split[0].put(key, value, hashCode, replaceIfPresent);
@@ -1299,7 +1284,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			seg.lock.lock();
 			try {
 				if (!seg.invalid) {
-					return dir.get(segmentIndex).remove(key, hashValue, null);	
+					return seg.remove(key, hashValue, null);	
 				}
 			}
 			finally {
@@ -1462,70 +1447,6 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 
 	}
 	
-	private class ValueIterator implements Iterator<V> {
-		
-		private final EntryIterator internalIterator;
-		
-		private ValueIterator() {
-			internalIterator = new EntryIterator();
-		}
-
-		@Override
-		public boolean hasNext() {
-			return internalIterator.hasNext();
-		}
-
-		@Override
-		public V next() {
-			return internalIterator.next().getValue();
-		}
-		
-		@Override
-		public void remove() {
-			throw new UnsupportedOperationException();
-		}
-
-	}
-	
-	private class KeyIterator implements Iterator<K> {
-
-		private final EntryIterator internalIterator;
-		
-		private KeyIterator() {
-			internalIterator = new EntryIterator();
-		}
-
-		@Override
-		public boolean hasNext() {
-			return internalIterator.hasNext();
-		}
-
-		@Override
-		public K next() {
-			return internalIterator.next().getKey();
-		}
-		
-		@Override
-		public void remove() {
-			throw new UnsupportedOperationException();
-		}		
-	}
-	
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public Iterator<V> getValueIterator() {	
-		return new ValueIterator();
-	}
-	
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public Iterator<K> getKeyIterator() {
-		return new KeyIterator();
-	}
 	
 	/**
 	 * {@inheritDoc}
@@ -1574,7 +1495,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			seg.lock.lock();
 			try {
 				if (!seg.invalid) {
-					return dir.get(segmentIndex).remove(key, hashValue, value) != null;	
+					return seg.remove(key, hashValue, value) != null;	
 				}
 			}
 			finally {
@@ -1588,7 +1509,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * {@inheritDoc}
 	 */
 	@Override
-	public V replace(K key, V value) {
+	public V replace(Object key, V value) {
 		if (key == null || value == null) {
 			throw new NullPointerException();
 		}
@@ -1601,7 +1522,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			seg.lock.lock();
 			try {
 				if (!seg.invalid) {
-					return dir.get(segmentIndex).replace(key, hashValue, null, value);	
+					return seg.replace(key, hashValue, null, value);	
 				}
 			}
 			finally {
@@ -1615,7 +1536,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * {@inheritDoc}
 	 */
 	@Override
-	public boolean replace(K key, V oldValue, V newValue) {
+	public boolean replace(Object key, V oldValue, V newValue) {
 		if (key == null || oldValue == null || newValue == null) {
 			throw new NullPointerException();
 		}
@@ -1628,7 +1549,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			seg.lock.lock();
 			try {
 				if (!seg.invalid) {
-					return dir.get(segmentIndex).replace(key, hashValue, oldValue, newValue) != null;	
+					return seg.replace(key, hashValue, oldValue, newValue) != null;	
 				}
 			}
 			finally {
