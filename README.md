@@ -76,6 +76,17 @@ and the hash map. The hash map uses a key adapter to obtain 64-bit
 hash codes for keys, and to perform matching operations between keys
 stored in the map and keys passed as method parameters. 
 
+<h3>Version 0.2.0.vopt</h3>
+This branch features performance improvements and reductions in memory requirements 
+resulting from the use of volatile byte arrays (rather than atomic integer arrays)
+for some internal segment data structures. The implementation of volatile byte arrays
+necessitates access to the sun.misc.Unsafe class, which requires some jiggery-pokery
+to circumvent restrictions in the JDK designed to prevent exactly this kind of thing.
+It is not merged with the main branch (and may not be) because Unsafe is not part of
+the JDK's public interface. The differences in this branch are relatively small, so
+they should be able to be merged with (relative) ease to other branches that introduce
+new features or functions, as deemed appropriate.
+
 <h4>SpookyHash</h4>
 The quality of the hash function used with the hash map directly 
 affects overall performance. An implementation of Bob Jenkins' 

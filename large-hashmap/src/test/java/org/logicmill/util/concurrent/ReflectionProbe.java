@@ -76,6 +76,19 @@ class ReflectionProbe {
 		}
 	}
 	
+	static VolatileByteArray getVolatileByteArrayField(Object obj, String fieldName) 
+	throws SecurityException, NoSuchFieldException, IllegalArgumentException, IllegalAccessException {
+		Field field = obj.getClass().getDeclaredField(fieldName);
+		field.setAccessible(true);
+		Object arrayObj = field.get(obj);
+		if (arrayObj instanceof VolatileByteArray) {
+			return (VolatileByteArray) arrayObj;
+		} else {
+			throw new IllegalArgumentException();
+		}
+	}
+
+	
 	@SuppressWarnings("rawtypes")
 	static AtomicReferenceArray getAtomicReferenceArrayField(Object obj, String fieldName) 
 	throws SecurityException, NoSuchFieldException, IllegalArgumentException, IllegalAccessException {

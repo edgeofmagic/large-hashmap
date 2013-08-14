@@ -265,8 +265,8 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 * critical.
 		 */
 		private final AtomicReferenceArray<Entry<K,V>> entries;
-		private final AtomicIntegerArray offsets;
-		private final AtomicIntegerArray buckets;
+		private final VolatileByteArray offsets;
+		private final VolatileByteArray buckets;
 		private final AtomicIntegerArray timeStamps;
 
 		private volatile int entryCount;
@@ -313,12 +313,12 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			this.sharedBits = sharedBits;
 			sharedBitsMask = (long)((1 << localDepth) - 1);
 			indexMask = segmentSize - 1;
-			offsets = new AtomicIntegerArray(segmentSize);
-			buckets = new AtomicIntegerArray(segmentSize);
+			offsets = new VolatileByteArray(segmentSize);
+			buckets = new VolatileByteArray(segmentSize);
 			entries = new AtomicReferenceArray<Entry<K,V>>(segmentSize);
 			timeStamps = new AtomicIntegerArray(segmentSize);
 			for (int i = 0; i < segmentSize; i++) {
-				buckets.set(i,NULL_OFFSET);
+				buckets.set(i,(byte) NULL_OFFSET);
 			}
 			lock = new ReentrantLock(true);
 			entryCount = 0;
@@ -484,14 +484,14 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 						 * possibly only) entry in the bucket, so change the
 						 * offset in buckets.
 						 */
-						offsets.set(freeSlotIndex, restOfBucketOffset);
+						offsets.set(freeSlotIndex, (byte) restOfBucketOffset);
 						/*
 						 * Serialization point:
 						 */
-						buckets.set(swapBucketIndex, freeSlotOffset);
+						buckets.set(swapBucketIndex, (byte) freeSlotOffset);
 						timeStamps.incrementAndGet(swapBucketIndex);
 						entries.set(swapSlotIndex, null);
-						offsets.set(swapSlotIndex, NULL_OFFSET);
+						offsets.set(swapSlotIndex, (byte) NULL_OFFSET);
 						return swapSlotIndex;			
 					} else {
 						/*
@@ -512,19 +512,19 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 						}
 						// assert prevOffset < freeSlotIndex && (freeSlotOffset < nextOffset || nextOffset == NULL_OFFSET);
 						
-						offsets.set(freeSlotIndex, nextOffset);
+						offsets.set(freeSlotIndex, (byte) nextOffset);
 						/*
 						 * Serialization point:
 						 */
-						offsets.set(prevIndex, freeSlotOffset);
+						offsets.set(prevIndex, (byte) freeSlotOffset);
 						/*
 						 * At this point, the moved entry is in the list twice.
 						 * That is OK, as long as it is never invisible.
 						 */
-						buckets.set(swapBucketIndex, restOfBucketOffset);
+						buckets.set(swapBucketIndex, (byte) restOfBucketOffset);
 						timeStamps.incrementAndGet(swapBucketIndex);
 						entries.set(swapSlotIndex, null);
-						offsets.set(swapSlotIndex, NULL_OFFSET);
+						offsets.set(swapSlotIndex, (byte) NULL_OFFSET);
 						return swapSlotIndex;
 					}
 				}
@@ -552,11 +552,11 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 				 * is smaller than the first offset in the bucket. Insert the 
 				 * new entry at the beginning of the bucket list.
 				 */
-				offsets.set(entryIndex, firstOffset);	
+				offsets.set(entryIndex, (byte) firstOffset);	
 				/*
 				 * Serialization point:
 				 */
-				buckets.set(bucketIndex, entryOffset);
+				buckets.set(bucketIndex, (byte) entryOffset);
 			} else {
 				/*
 				 * At least one entry in the bucket precedes the new entry.
@@ -571,11 +571,11 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 					prevOffset = nextOffset;
 					nextOffset = offsets.get(prevIndex);
 				}
-				offsets.set(entryIndex, nextOffset);
+				offsets.set(entryIndex, (byte) nextOffset);
 				/*
 				 * Serialization point:
 				 */
-				offsets.set(prevIndex, entryOffset);
+				offsets.set(prevIndex, (byte) entryOffset);
 			}				
 		
 		}
@@ -746,10 +746,10 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 					/*
 					 * Serialization point:
 					 */
-					offsets.set(adjacentEntryIndex, freeSlotOffset);
+					offsets.set(adjacentEntryIndex, (byte) freeSlotOffset);
 					timeStamps.incrementAndGet(contractingBucketIndex);
 					entries.set(movingEntryIndex, null);
-					offsets.set(movingEntryIndex, NULL_OFFSET);
+					offsets.set(movingEntryIndex, (byte) NULL_OFFSET);
 					return 1 + recycle(movingEntryIndex);
 				}
 			}
@@ -789,7 +789,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 				buckets.set(bucketIndex, offsets.get(nextIndex));
 				timeStamps.incrementAndGet(bucketIndex);
 				entries.set(nextIndex, null);
-				offsets.set(nextIndex, NULL_OFFSET);
+				offsets.set(nextIndex, (byte) NULL_OFFSET);
 				entryCount--;
 				mapEntryCount.decrementAndGet();
 				int recycleDepth = recycle(nextIndex);
@@ -827,7 +827,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 					offsets.set(prevIndex, offsets.get(nextIndex));
 					timeStamps.incrementAndGet(bucketIndex);
 					entries.set(nextIndex, null);
-					offsets.set(nextIndex, NULL_OFFSET);
+					offsets.set(nextIndex, (byte) NULL_OFFSET);
 					entryCount--;
 					mapEntryCount.decrementAndGet();
 					recycle(nextIndex);

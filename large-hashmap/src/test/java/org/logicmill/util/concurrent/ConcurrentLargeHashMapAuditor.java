@@ -141,8 +141,8 @@ public class ConcurrentLargeHashMapAuditor {
 			int bucketEntryCount = 0;
 			segmentProbe.getSegmentLock().lock();
 			try {
-				AtomicIntegerArray buckets = segmentProbe.getBuckets();
-				AtomicIntegerArray offsets = segmentProbe.getOffsets();
+				VolatileByteArray buckets = segmentProbe.getBuckets();
+				VolatileByteArray offsets = segmentProbe.getOffsets();
 				AtomicReferenceArray<LargeHashMap.Entry<?,?>> entries = (AtomicReferenceArray<LargeHashMap.Entry<?,?>>)segmentProbe.getEntries();
 				nextBucket:
 				for (int bucketIndex = 0; bucketIndex < buckets.length(); bucketIndex++) {

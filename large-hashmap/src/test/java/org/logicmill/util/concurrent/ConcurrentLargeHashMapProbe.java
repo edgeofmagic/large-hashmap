@@ -65,8 +65,8 @@ public class ConcurrentLargeHashMapProbe {
 	public class SegmentProbe {
 
 		private final Object segment;
-		private final AtomicIntegerArray buckets;
-		private final AtomicIntegerArray offsets;
+		private final VolatileByteArray buckets;
+		private final VolatileByteArray offsets;
 		private final AtomicReferenceArray<LargeHashMap.Entry<?,?>> entries;
 		private final AtomicIntegerArray timeStamps;
 		private final int indexMask;
@@ -81,8 +81,8 @@ public class ConcurrentLargeHashMapProbe {
 			this.segment = segment;
 
 			try {
-				buckets = ReflectionProbe.getAtomicIntegerArrayField(segment, "buckets");
-				offsets = ReflectionProbe.getAtomicIntegerArrayField(segment, "offsets");
+				buckets = ReflectionProbe.getVolatileByteArrayField(segment, "buckets");
+				offsets = ReflectionProbe.getVolatileByteArrayField(segment, "offsets");
 				timeStamps = ReflectionProbe.getAtomicIntegerArrayField(segment, "timeStamps");
 				entries = ReflectionProbe.getAtomicReferenceArrayField(segment, "entries");
 				indexMask = ReflectionProbe.getIntField(segment, "indexMask");
@@ -122,7 +122,7 @@ public class ConcurrentLargeHashMapProbe {
 		 * @see #getOffsets()
 		 * @see #getEntries()
 		 */
-		public AtomicIntegerArray getBuckets() {
+		public VolatileByteArray getBuckets() {
 			return buckets;
 		}
 		
@@ -144,7 +144,7 @@ public class ConcurrentLargeHashMapProbe {
 		 * until the list is terminated by a {@code NULL_OFFSET} value (-1) in <code>offsets[i<sub>j</sub>]</code>.
 		 * @return reference to the segment's {@code offsets} array
 		 */
-		public AtomicIntegerArray getOffsets() {
+		public VolatileByteArray getOffsets() {
 			return offsets;
 		}
 		
