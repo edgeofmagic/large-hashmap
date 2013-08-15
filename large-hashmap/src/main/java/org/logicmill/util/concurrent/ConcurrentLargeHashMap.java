@@ -335,8 +335,8 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			
 		}
 			
-		private boolean sharedBitsMatchSegment(long hashValue) {
-			return sharedBits(hashValue) == sharedBits;	
+		private boolean sharedBitsMatchSegment(long hashCode) {
+			return sharedBits(hashCode) == sharedBits;	
 		}
 		
 		/* Splits a segment when it reaches the load threshold. Splitting 
@@ -622,7 +622,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 */
 		private V put(K key, V value, long hashCode, boolean replaceIfPresent) 
 		throws SegmentOverflowException {
-			// assert sharedBits(hashValue) == sharedBits;
+			// assert sharedBits(hashCode) == sharedBits;
 			int bucketIndex = bucketIndex(hashCode);
 			/*
 			 * Search for entry with key
@@ -651,15 +651,15 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		}
 	
 		
-		private Entry<K,V> get(Object key, long hashValue) {
+		private Entry<K,V> get(Object key, long hashCode) {
 			/*
 			 * In very high update-rate environments, it might be
 			 * necessary to limit re-tries, and go to a linear search of
 			 * all offsets in {0 .. HOP_RANGE-1} if the limit is exceeded.
 			 */
 			int localRetrys = 0;
-			// assert sharedBits(hashValue) == sharedBits;
-			int bucketIndex = bucketIndex(hashValue);
+			// assert sharedBits(hashCode) == sharedBits;
+			int bucketIndex = bucketIndex(hashCode);
 			int oldTimeStamp, newTimeStamp = 0;
 			try {
 				retry:
@@ -683,7 +683,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 							localRetrys++;
 							continue retry;
 						}
-						if (entry.getLongHashCode() == hashValue && keyAdapter.keyMatches(entry.getKey(),key)) {
+						if (entry.getLongHashCode() == hashCode && keyAdapter.keyMatches(entry.getKey(),key)) {
 							return entry;
 						}
 						nextOffset = offsets.get(nextIndex);
@@ -761,9 +761,9 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 * Public remove() delegates to this method on the appropriate segment.
 		 * The segment has already been locked by the calling thread. 
 		 */
-		private V remove(Object key, long hashValue, Object value) {
-			// assert sharedBits(hashValue) == sharedBits;
-			int bucketIndex = bucketIndex(hashValue);			
+		private V remove(Object key, long hashCode, Object value) {
+			// assert sharedBits(hashCode) == sharedBits;
+			int bucketIndex = bucketIndex(hashCode);			
 			V resultValue = null;
 			int nextOffset = buckets.get(bucketIndex);
 			if (nextOffset == NULL_OFFSET) {
@@ -776,7 +776,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			int nextIndex = wrapIndex(bucketIndex + nextOffset);
 			Entry<K,V> entry = entries.get(nextIndex);
 			// assert entry != null;
-			if (entry.getLongHashCode() == hashValue && keyAdapter.keyMatches(entry.getKey(),key)) {
+			if (entry.getLongHashCode() == hashCode && keyAdapter.keyMatches(entry.getKey(),key)) {
 				/*
 				 * First entry in the bucket was the key to be removed.
 				 */
@@ -817,7 +817,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 				nextIndex = wrapIndex(bucketIndex + nextOffset);
 				nextOffset = offsets.get(nextIndex);
 				entry = entries.get(nextIndex);
-				if (entry.getLongHashCode() == hashValue && keyAdapter.keyMatches(entry.getKey(),key)) {
+				if (entry.getLongHashCode() == hashCode && keyAdapter.keyMatches(entry.getKey(),key)) {
 					resultValue =  entry.getValue();
 					if (value != null && !value.equals(resultValue)) {
 						return null;
@@ -973,6 +973,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	private final int segmentSize;
 	private final ReentrantLock dirLock;
 	private final AtomicReference<AtomicReferenceArray<Segment>> directory;
+	
 	/*
 	 * Maximum number of entries allowed in a segment before splitting.
 	 */
@@ -1261,7 +1262,6 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		return result == null ? null : result.getValue();
 	}
 	
-	
 	@Override
 	public LargeHashMap.Entry<K,V> getEntry(Object key) {
 		if (key == null) {
@@ -1278,6 +1278,17 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * {@inheritDoc}
 	 */
 	@Override
+	public boolean containsKey(Object key) {
+		if (key == null) {
+			throw new NullPointerException();
+		}
+		return get(key) != null;
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
 	public V remove(Object key) {
 		if (key == null) {
 			throw new NullPointerException();
@@ -1285,6 +1296,80 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		long hashCode = keyAdapter.getLongHashCode(key);
 		return remove(key, hashCode, null);
 	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public boolean remove(Object key, Object value) {
+		if (key == null || value == null) {
+			throw new NullPointerException();
+		}
+		long hashCode = keyAdapter.getLongHashCode(key);
+		return remove(key, hashCode, value) != null;
+	}
+	
+	private V remove(Object key, long hashCode, Object value) {
+		while (true) {
+			AtomicReferenceArray<Segment> dir = directory.get();
+			int dirSize = dir.length();
+			long dirMask = dirSize - 1;
+			int segmentIndex = (int)(hashCode & (long)dirMask);
+			Segment seg = dir.get(segmentIndex);
+			seg.lock.lock();
+			try {
+				if (!seg.invalid) {
+					return seg.remove(key, hashCode, value);	
+				}
+			}
+			finally {
+				seg.lock.unlock();
+			}
+		}
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public V replace(Object key, V newValue) {
+		if (key == null || newValue == null) {
+			throw new NullPointerException();
+		}
+		long hashCode = keyAdapter.getLongHashCode(key);
+		return replace(key, hashCode, null, newValue);
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public boolean replace(Object key, Object oldValue, V newValue) {
+		if (key == null || oldValue == null || newValue == null) {
+			throw new NullPointerException();
+		}
+		long hashCode = keyAdapter.getLongHashCode(key);
+		return replace(key, hashCode, oldValue, newValue) != null;
+	}
+	
+	private V replace(Object key, long hashCode, Object oldValue, V newValue) {
+		while (true) {
+			AtomicReferenceArray<Segment> dir = directory.get();
+			long dirMask = dir.length() - 1;
+			int segmentIndex = (int)(hashCode & (long)dirMask);
+			Segment seg = dir.get(segmentIndex);
+			seg.lock.lock();
+			try {
+				if (!seg.invalid) {
+					return seg.replace(key, hashCode, oldValue, newValue);	
+				}
+			}
+			finally {
+				seg.lock.unlock();
+			}
+		}
+		
+	}	
 	
 	/*
 	 * An iterator over a map's segments, with the following behavior:
@@ -1455,107 +1540,6 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	@Override
 	public long size() {
 		return mapEntryCount.get();
-	}
-
-
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public boolean containsKey(Object key) {
-		if (key == null) {
-			throw new NullPointerException();
-		}
-		return get(key) != null;
-	}
-
-
-	
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public boolean remove(Object key, Object value) {
-		if (key == null || value == null) {
-			throw new NullPointerException();
-		}
-		long hashCode = keyAdapter.getLongHashCode(key);
-		return remove(key, hashCode, value) != null;
-
-	}
-	
-	V remove(Object key, long hashCode, Object value) {
-		while (true) {
-			AtomicReferenceArray<Segment> dir = directory.get();
-			int dirSize = dir.length();
-			long dirMask = dirSize - 1;
-			int segmentIndex = (int)(hashCode & (long)dirMask);
-			Segment seg = dir.get(segmentIndex);
-			seg.lock.lock();
-			try {
-				if (!seg.invalid) {
-					return seg.remove(key, hashCode, value);	
-				}
-			}
-			finally {
-				seg.lock.unlock();
-			}
-		}
-		
-	}
-
-
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public V replace(Object key, V value) {
-		if (key == null || value == null) {
-			throw new NullPointerException();
-		}
-		long hashValue = keyAdapter.getLongHashCode(key);
-		while (true) {
-			AtomicReferenceArray<Segment> dir = directory.get();
-			long dirMask = dir.length() - 1;
-			int segmentIndex = (int)(hashValue & (long)dirMask);
-			Segment seg = dir.get(segmentIndex);
-			seg.lock.lock();
-			try {
-				if (!seg.invalid) {
-					return seg.replace(key, hashValue, null, value);	
-				}
-			}
-			finally {
-				seg.lock.unlock();
-			}
-		}
-	}
-
-
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public boolean replace(Object key, Object oldValue, V newValue) {
-		if (key == null || oldValue == null || newValue == null) {
-			throw new NullPointerException();
-		}
-		long hashValue = keyAdapter.getLongHashCode(key);
-		while (true) {
-			AtomicReferenceArray<Segment> dir = directory.get();
-			long dirMask = dir.length() - 1;
-			int segmentIndex = (int)(hashValue & (long)dirMask);
-			Segment seg = dir.get(segmentIndex);
-			seg.lock.lock();
-			try {
-				if (!seg.invalid) {
-					return seg.replace(key, hashValue, oldValue, newValue) != null;	
-				}
-			}
-			finally {
-				seg.lock.unlock();
-			}
-		}
 	}
 
 
