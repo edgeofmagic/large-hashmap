@@ -506,6 +506,7 @@ public class ConcurrentLargeHashMapProbe {
 	
 
 	private final Object map;
+	private final Object core;
 	private final int HOP_RANGE;
 	private final int NULL_OFFSET;
 	private final boolean GATHER_METRICS;
@@ -526,14 +527,15 @@ public class ConcurrentLargeHashMapProbe {
 	public ConcurrentLargeHashMapProbe(Object map) throws ProbeInternalException {
 		this.map = map;
 		try {
-			NULL_OFFSET = ReflectionProbe.getIntField(map, "NULL_OFFSET");
-			HOP_RANGE = ReflectionProbe.getIntField(map, "HOP_RANGE");
-			GATHER_METRICS = ReflectionProbe.getBooleanField(map, "GATHER_EVENT_DATA");
-			directory = (AtomicReference<AtomicReferenceArray<?>>) ReflectionProbe.getAtomicReferenceField(map, "directory");
-			segmentSize = ReflectionProbe.getIntField(map, "segmentSize");
-			dirLock = (ReentrantLock)ReflectionProbe.getObjectField(map, "dirLock");
-			forcedSplitCount = ReflectionProbe.getAtomicIntegerField(map, "forcedSplitCount");
-			thresholdSplitCount = ReflectionProbe.getAtomicIntegerField(map, "thresholdSplitCount");
+			core = ReflectionProbe.getObjectField(map, "hashCore");
+			NULL_OFFSET = ReflectionProbe.getIntField(core, "NULL_OFFSET");
+			HOP_RANGE = ReflectionProbe.getIntField(core, "HOP_RANGE");
+			GATHER_METRICS = ReflectionProbe.getBooleanField(core, "GATHER_EVENT_DATA");
+			directory = (AtomicReference<AtomicReferenceArray<?>>) ReflectionProbe.getAtomicReferenceField(core, "directory");
+			segmentSize = ReflectionProbe.getIntField(core, "segmentSize");
+			dirLock = (ReentrantLock)ReflectionProbe.getObjectField(core, "dirLock");
+			forcedSplitCount = ReflectionProbe.getAtomicIntegerField(core, "forcedSplitCount");
+			thresholdSplitCount = ReflectionProbe.getAtomicIntegerField(core, "thresholdSplitCount");
 		} catch (SecurityException e) {
 			throw new ProbeInternalException(e);		
 		} catch (IllegalArgumentException e) {
@@ -587,7 +589,7 @@ public class ConcurrentLargeHashMapProbe {
 	 */
 	public int getSegmentCount() throws ProbeInternalException { 
 		try {
-			return ReflectionProbe.getIntField(map, "segmentCount");
+			return ReflectionProbe.getIntField(core, "segmentCount");
 		} catch (SecurityException e) {
 			throw new ProbeInternalException(e);
 		} catch (IllegalArgumentException e) {

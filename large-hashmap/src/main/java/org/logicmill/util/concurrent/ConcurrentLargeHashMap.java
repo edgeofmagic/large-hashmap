@@ -83,13 +83,21 @@ public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 		}
 
 		@Override
-		public long getLongHashCode(Object key) {		
-			return mapKeyAdapter.getLongHashCode(key);
+		public long getLongHashCode(Object key) {	
+			if (key instanceof Entry) {
+				return ((Entry<K,V>)key).getLongHashCode();
+			} else {
+				return mapKeyAdapter.getLongHashCode(key);
+			}
 		}
 
 		@Override
 		public boolean keyMatches(LargeHashMap.Entry<K,V> mappedEntry, Object key) {
-			return mapKeyAdapter.keyMatches(mappedEntry.getKey(), key);
+			if (key instanceof Entry) {
+				return mapKeyAdapter.keyMatches(mappedEntry.getKey(), ((Entry<K,V>)key).getKey());
+			} else {
+				return mapKeyAdapter.keyMatches(mappedEntry.getKey(), key);
+			}
 		}
 
 	}
@@ -98,17 +106,20 @@ public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 
 	@Override
 	public boolean containsKey(Object key) {
+		if (key == null) throw new NullPointerException();
 		return hashCore.contains(key);
 	}
 
 	@Override
 	public V get(Object key) {
+		if (key == null) throw new NullPointerException();
 		LargeHashMap.Entry<K,V> result = hashCore.get(key);
 		return result != null ? result.getValue() : null;
 	}
 
 	@Override
 	public V putIfAbsent(K key, V value) {
+		if (key == null || value == null) throw new NullPointerException();
 		LargeHashMap.Entry<K,V> entry = new Entry<K,V>(key, value, keyAdapter.getLongHashCode(key));
 		LargeHashMap.Entry<K,V> result =  hashCore.putIfAbsent(entry);
 		return result != null ? result.getValue() : null ;
@@ -116,6 +127,7 @@ public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 
 	@Override
 	public V put(K key, V value) {
+		if (key == null || value == null) throw new NullPointerException();
 		Entry<K,V> entry = new Entry<K,V>(key, value, keyAdapter.getLongHashCode(key));
 		LargeHashMap.Entry<K,V> result =  hashCore.put(entry);
 		return result != null ? result.getValue() : null ;
@@ -123,6 +135,7 @@ public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 
 	@Override
 	public V remove(Object key) {
+		if (key == null) throw new NullPointerException();
 		LargeHashMap.Entry<K,V> result =  hashCore.remove(key);
 		return result != null ? result.getValue() : null ;
 	}
@@ -140,6 +153,7 @@ public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 
 	@Override
 	public boolean remove(Object key, Object value) {
+		if (key == null || value == null) throw new NullPointerException();
 		LargeHashMap.Entry<K,V> result = hashCore.remove(key, 
 		new MapRemoveHandler(value) {
 			@Override
@@ -165,6 +179,7 @@ public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 	
 	@Override
 	public V replace(Object key, V value) {
+		if (key == null || value == null) throw new NullPointerException();
 		LargeHashMap.Entry<K,V> result = hashCore.replace(key, 
 		new MapReplaceHandler(value) {
 			@Override
@@ -173,7 +188,7 @@ public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 			}
 			
 		});
-		return result.getValue();
+		return result != null ? result.getValue() : null;
 	}
 
 	private abstract class MapReplaceOldHandler implements LargeHashCore.ReplaceHandler<LargeHashMap.Entry<K,V>> {
@@ -190,6 +205,7 @@ public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 	
 	@Override
 	public boolean replace(Object key, Object oldValue, V newValue) {
+		if (key == null || oldValue == null || newValue == null) throw new NullPointerException();
 		LargeHashMap.Entry<K,V> result = hashCore.replace(key, 
 				new MapReplaceOldHandler(oldValue, newValue) {
 					@Override

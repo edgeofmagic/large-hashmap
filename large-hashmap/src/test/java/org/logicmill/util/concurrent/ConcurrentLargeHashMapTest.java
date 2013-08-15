@@ -94,7 +94,7 @@ public class ConcurrentLargeHashMapTest {
 			if (key instanceof CharSequence) { 
 				return org.logicmill.util.hash.SpookyHash64.hash((CharSequence)key,  0L); 
 			} else {
-				throw new IllegalArgumentException("key must be type byte[]");
+				throw new IllegalArgumentException("key must be type CharSequence");
 			}
 		}
 		@Override

@@ -84,6 +84,13 @@ algorithm is included in this project, and is highly recommended. The performanc
 of SpookyHash, with respect to both speed and the statistical properties of 
 the resulting hash codes, compares favorably among
 hashing algorithms that produce 64- or 128-bit results.
+
+<h3>Long Hash Codes and Key Adapters</h3>
+In this branch, the core functionality has been factored into the LargeHashCore 
+interface and ConcurrentLargeHashCore class, which constitute (approximately) a hash set.
+The hash map is built on top of this core, as a set of entries that encapsulate key/value
+pairs. This branch is still experimental, and as such, is not recommended for use.
+
 <p id="footnote-1"><sup>[1]</sup> <a href="http://dx.doi.org/10.1145%2F320083.320092"> Fagin, et al, 
 "Extendible Hashing - A Fast Access Method for Dynamic Files", 
 ACM TODS Vol. 4 No. 3, Sept. 1979</a></p>
