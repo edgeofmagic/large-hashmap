@@ -4,7 +4,7 @@
 
   <groupId>org.logicmill</groupId>
   <artifactId>large-hashmap</artifactId>
-  <version>0.2.0</version>
+  <version>0.2.1</version>
   <url> </url>
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

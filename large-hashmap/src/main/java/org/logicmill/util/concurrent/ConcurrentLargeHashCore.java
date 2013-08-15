@@ -1,186 +1,45 @@
-/*
- * Copyright 2013 David Curtis
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package org.logicmill.util.concurrent;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.atomic.AtomicReferenceArray;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicIntegerArray;
-import java.util.concurrent.atomic.AtomicLong;
+
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicIntegerArray;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicReferenceArray;
+import java.util.concurrent.locks.ReentrantLock;
 
-import org.logicmill.util.LargeHashMap;
+import org.logicmill.util.LargeHashCore;
 import org.logicmill.util.LongHashable;
 
-/** 
- * A concurrent hash map that scales well to large data sets.
- * <h3>Concurrency</h3>
- * All operations are thread-safe. Retrieval operations ({@code get}, 
- * {@code containsKey}, and iterator traversal) do not entail locking; they 
- * execute concurrently with update operations. Update operations ({@code put},
- * {@code putIfAbsent}, {@code replace} and {@code remove}) may block if 
- * overlapping updates are attempted on the same segment. Segmentation is 
- * configurable, so the probability of update blocking is (to a degree) under 
- * the programmer's control. Retrievals reflect the result of update operations 
- * that complete before the onset of the retrieval, and may also reflect the 
- * state of update operations that complete after the onset of the retrieval. 
- * Iterators do not throw {@link java.util.ConcurrentModificationException}.
- * If an entry is contained in the map prior to the iterator's creation and
- * it is not removed before the iterator is exhausted, it will be returned by 
- * the iterator. The entries returned by an iterator may or may not reflect 
- * updates that occur after the iterator's creation.
- * Iterators themselves are not thread-safe; although iterators can be used 
- * concurrently with operations on the map and other iterators, an iterator 
- * should not be used by multiple threads.
- * 
- * <h3>Extendible Hashing</h3>
- * Extendible hashing 
- * <a href="#footnote-1">[1]</a> <a href="#footnote-2">[2]</a> allows the 
- * map to expand gracefully, amortizing the cost of resizing in constant-sized 
- * increments as the map grows. The map is partitioned into fixed-size 
- * segments. Hash values are mapped to segments through a central directory.
- * When a segment reaches the load factor threshold it splits into two 
- * segments. When a split would exceed directory capacity, the directory 
- * doubles in size. The current implementation does not merge segments to 
- * reduce capacity as entries are removed.
- * <h4>Concurrency during splits and directory expansion</h4>
- * When an update causes a segment to split, the updating thread will acquire
- * a lock on the directory to assign references to the new segments in the 
- * directory. If a split forces the directory to expand, the updating thread 
- * keeps the directory locked during expansion. A directory lock will not block 
- * a concurrent update unless that update forces a segment split. Directory
- * locks do not affect retrievals.
- * <h3>Hopscotch Hashing</h3>
- * This implementation uses Hopscotch hashing <a href="#footnote-3">[3]</a> 
- * within segments for conflict resolution. Hopscotch hashing is similar to 
- * linear probing, except that colliding map entries all reside in relatively 
- * close proximity to each other, within a strictly bounded range, resulting 
- * in shorter searches and improved cache hit rates. Hopscotch hashing also 
- * yields good performance at load factors as high as 0.9.<p> 
- * At present, the hop range (longest distance from the hash index that
- * a collision can be stored) is set at 32, and the maximum search range
- * for an empty slot during an add operation is 512. If an add operation
- * fails because no empty slots are available in search range, or because 
- * hopping fails to free up a slot within hop range, the segment is split 
- * regardless of its current load factor. Such insertion failure splits 
- * typically don't occur unless the load factor exceeds 0.9.<p>
- * Hopscotch hashing was designed to support a high degree of concurrency, 
- * including non-blocking retrieval. This implementation follows the 
- * concurrency strategies described in the originating papers, with minor 
- * variations.
- * <h3>Long Hash Codes</h3>
- * ConcurrentLargeHashMap is designed to support hash maps that can expand to very 
- * large size (> 2<sup>32</sup> items). To that end, it uses 64-bit hash codes.
- * <h4>Hash function requirements</h4>
- * Because segment size is a power of 2, segment indices consist of bit fields
- * extracted directly from hash code values. It is important to choose a hash 
- * function that reliably exhibits avalanche and uniform distribution. An 
- * implementation of Bob Jenkins' SpookyHash V2 algorithm 
- * ({@link org.logicmill.util.hash.SpookyHash} and 
- * {@link org.logicmill.util.hash.SpookyHash64}) is available in conjunction 
- * with ConcurrentLargeHashMap, and is highly recommended.
- * <h4>Key adapters</h4>
- * {@code ConcurrentLargeHashMap} uses key adapters (see {@link 
- * org.logicmill.util.LargeHashMap.KeyAdapter}) to obtain 64-bit hash codes 
- * from keys, and to perform matching comparisons on keys. A reference to a key 
- * adapter implementation can be passed as a parameter to the constructor 
- * {@link #ConcurrentLargeHashMap(int, int, float, LargeHashMap.KeyAdapter)}.
- * {@code ConcurrentLargeHashMap} also provides a default key adapter 
- * implementation that expects keys to implement {@link LongHashable}, and
- * uses {@code Object.equals()} for key matching. The default key adapter
- * is used when the map is constructed with 
- * {@link #ConcurrentLargeHashMap(int, int, float)}.
- * <p id="footnote-1">[1] See 
- * <a href="http://dx.doi.org/10.1145%2F320083.320092"> Fagin, et al, 
- * "Extendible Hashing - A Fast Access Method for Dynamic Files", 
- * ACM TODS Vol. 4 No. 3, Sept. 1979</a> for the original article describing 
- * extendible hashing.</p>
- * <p id="footnote-2">[2] <a href="http://dl.acm.org/citation.cfm?id=588072">
- * Ellis, "Extendible Hashing for Concurrent Operations and Distributed Data", 
- * PODS 1983</a> describes strategies for concurrent operations on extendible 
- * hash tables. The strategy used in ConcurrentLargeHashMap is informed
- * by this paper, but does not follow it precisely.</p>
- * <p id="footnote-3">[3] 
- * <a href="http://mcg.cs.tau.ac.il/papers/disc2008-hopscotch.pdf">
- * Herlihy, et al, "Hopscotch Hashing", DISC 2008</a>.</p>
- * 
+/**
  * @author David Curtis
- * @see LargeHashMap
- * @see org.logicmill.util.hash.SpookyHash
- * @see org.logicmill.util.hash.SpookyHash64
- * 
  *
- * @param <K> type of keys stored in the map
- * @param <V> type of values stored in the map
+ * @param <E>
  */
-public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
+public class ConcurrentLargeHashCore<E> implements LargeHashCore<E> {
+
 	
-	/*
-	 * Default entry implementation, stores hash codes to avoid repeatedly 
-	 * computing them.
-	 */
-	private static class Entry<K,V> implements LargeHashMap.Entry<K, V>, LongHashable {
-		private final K key;
-		private final V value;
-		private final long hashCode;
-		
-		private Entry(K key, V value, long hashCode) {
-			this.key = key;
-			this.value = value;
-			this.hashCode = hashCode;
-		}
-		
-		@Override
-		public K getKey() {
-			return key;
-		}
-		
-		@Override
-		public V getValue() {
-			return value;
-		}
-		
-		@Override
-		public long getLongHashCode() {
-			return hashCode;
-		}
-	}
-
-	/*
-	 * Default key adapter. 
-	 */
-	private static class DefaultKeyAdapter<K> implements LargeHashMap.KeyAdapter<K> {
+	private static class DefaultEntryAdapter<E> implements LargeHashCore.EntryAdapter<E> {
 
 		@Override
-		public long getLongHashCode(Object key) {
-			if (key instanceof LongHashable) {
-				return ((LongHashable)key).getLongHashCode();
+		public long getLongHashCode(Object entryKey) {
+			if (entryKey instanceof LongHashable) {
+				return ((LongHashable)entryKey).getLongHashCode();
 			} else {
 				throw new IllegalArgumentException("key must implement org.logicmill.util.LongHashable");
 			}
 		}
 
 		@Override
-		public boolean keyMatches(K mapKey, Object key) {
-			return mapKey.equals(key);
+		public boolean keyMatches(E mappedEntry, Object entryKey) {
+			return mappedEntry.equals(entryKey);
 		}
+
 	}
+
 	
 	/*
 	 * REGARDING SEGMENT STRUCTURE
@@ -265,7 +124,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 * by segment locks, but guaranteeing order of visibility is 
 		 * critical.
 		 */
-		private final AtomicReferenceArray<Entry<K,V>> entries;
+		private final AtomicReferenceArray<E> entries;
 		private final AtomicIntegerArray offsets;
 		private final AtomicIntegerArray buckets;
 		private final AtomicIntegerArray timeStamps;
@@ -316,7 +175,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			indexMask = segmentSize - 1;
 			offsets = new AtomicIntegerArray(segmentSize);
 			buckets = new AtomicIntegerArray(segmentSize);
-			entries = new AtomicReferenceArray<Entry<K,V>>(segmentSize);
+			entries = new AtomicReferenceArray<E>(segmentSize);
 			timeStamps = new AtomicIntegerArray(segmentSize);
 			for (int i = 0; i < segmentSize; i++) {
 				buckets.set(i,NULL_OFFSET);
@@ -335,8 +194,8 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			
 		}
 			
-		private boolean sharedBitsMatchSegment(long hashValue) {
-			return sharedBits(hashValue) == sharedBits;	
+		private boolean sharedBitsMatchSegment(long hashCode) {
+			return sharedBits(hashCode) == sharedBits;	
 		}
 		
 		/* Splits a segment when it reaches the load threshold. Splitting 
@@ -346,15 +205,15 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 */
 		@SuppressWarnings("unchecked")
 		private Segment[] split() {
-			Segment[] splitPair = new ConcurrentLargeHashMap.Segment[2];
+			Segment[] splitPair = new ConcurrentLargeHashCore.Segment[2];
 			int  newLocalDepth = localDepth + 1;
 			int newSharedBitMask = 1 << localDepth;
 			splitPair[0] = new Segment(newLocalDepth, sharedBits);
 			splitPair[1] = new Segment(newLocalDepth, sharedBits | newSharedBitMask);
 			for (int i = 0; i < segmentSize; i++) {
-				Entry<K,V> entry = entries.get(i);
+				E entry = entries.get(i);
 				if (entry != null) {
-					if ((entry.getLongHashCode() & (long)newSharedBitMask) == 0) {
+					if ((entryAdapter.getLongHashCode(entry) & (long)newSharedBitMask) == 0) {
 						splitPair[0].splitPut(entry);
 					} else {
 						splitPair[1].splitPut(entry);
@@ -386,10 +245,10 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 * 	2) the target segment is visible only to the current thread, and
 		 * 	2) the key/entry can't already be in the segment.
 		 */
-		private void splitPut(Entry<K,V> entry) {
+		private void splitPut(E entry) {
 			// assert sharedBits(entry.getHashCode()) == sharedBits;
 			try {
-				placeWithinHopRange(bucketIndex(entry.getLongHashCode()), entry);
+				placeWithinHopRange(bucketIndex(entryAdapter.getLongHashCode(entry)), entry);
 			} catch (SegmentOverflowException soex) {
 				/*
 				 *  This should not occur during split operation. Freak out.
@@ -405,7 +264,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 * findCloserSlot() constitute the core of the Hopscotch hashing 
 		 * algorithm implementation.
 		 */
-		void placeWithinHopRange(int bucketIndex, Entry<K,V> entry) 
+		void placeWithinHopRange(int bucketIndex, E entry) 
 				throws SegmentOverflowException {
 			int freeSlotOffset = 0;
 			int freeSlotIndex = bucketIndex;
@@ -581,12 +440,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		
 		}
 		
-		/*
-		 * Implements replace(Object key, V value) and replace (Object key, V oldValue, V newValue).
-		 * If oldValue is null, treat it as replace(key, value), otherwise, only replace
-		 * if existing entry value equals oldValue.
-		 */
-		private V replace(Object key, long hashCode, Object oldValue, V newValue) {
+		private E replace(Object entryKey, long hashCode, LargeHashCore.ReplaceHandler<E> handler) {
 			int bucketIndex = bucketIndex(hashCode);
 			/*
 			 * Search for entry with key
@@ -594,19 +448,42 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			int nextOffset = buckets.get(bucketIndex);
 			while (nextOffset != NULL_OFFSET) {
 				int entryIndex = wrapIndex(bucketIndex + nextOffset);
-				Entry<K,V> entry = entries.get(entryIndex);
-				if (entry.getLongHashCode() == hashCode  && keyAdapter.keyMatches(entry.getKey(),key)) {
-					if (oldValue != null && !
-							oldValue.equals(entry.getValue())) {
-						/*
-						 * replace only if entry value equals oldValue
-						 */
+				E mappedEntry = entries.get(entryIndex);
+				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.keyMatches(mappedEntry,entryKey)) {		
+					E newEntry = handler.replaceWith(mappedEntry);
+					if (newEntry == null) {
 						return null;
 					} else {
-						Entry<K,V> newEntry = new Entry<K,V>(entry.getKey(), newValue, hashCode);
 						entries.set(entryIndex, newEntry);
 					}
-					return entry.getValue();						
+					return mappedEntry;
+				}
+				nextOffset = offsets.get(entryIndex);
+			}
+			/*
+			 *  Not found
+			 */
+			return null;	
+		}
+	
+		
+		/*
+		 * Implements replace(Object key, V value) and replace (Object key, V oldValue, V newValue).
+		 * If oldValue is null, treat it as replace(key, value), otherwise, only replace
+		 * if existing entry value equals oldValue.
+		 */
+		private E replace(Object entryKey, long hashCode, E newEntry) {
+			int bucketIndex = bucketIndex(hashCode);
+			/*
+			 * Search for entry with key
+			 */
+			int nextOffset = buckets.get(bucketIndex);
+			while (nextOffset != NULL_OFFSET) {
+				int entryIndex = wrapIndex(bucketIndex + nextOffset);
+				E mappedEntry = entries.get(entryIndex);
+				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.keyMatches(mappedEntry,entryKey)) {
+					entries.set(entryIndex, newEntry);
+					return mappedEntry;						
 				}
 				nextOffset = offsets.get(entryIndex);
 			}
@@ -620,7 +497,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 * Implements put() and putIfAbsent() on the appropriate segment. The
 		 * segment has already been locked by the thread on entry.
 		 */
-		private V put(K key, V value, long hashCode, boolean replaceIfPresent) 
+		private E put(E newEntry, long hashCode, boolean replaceIfPresent) 
 		throws SegmentOverflowException {
 			// assert sharedBits(hashValue) == sharedBits;
 			int bucketIndex = bucketIndex(hashCode);
@@ -630,28 +507,26 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			int nextOffset = buckets.get(bucketIndex);
 			while (nextOffset != NULL_OFFSET) {
 				int entryIndex = wrapIndex(bucketIndex + nextOffset);
-				Entry<K,V> entry = entries.get(entryIndex);
-				if (entry.getLongHashCode() == hashCode  && keyAdapter.keyMatches(entry.getKey(),key)) {
+				E mappedEntry = entries.get(entryIndex);
+				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode  && entryAdapter.keyMatches(mappedEntry, newEntry)) {
 					if (replaceIfPresent) {
-						Entry<K,V> newEntry = new Entry<K,V>(key, value, hashCode);
 						entries.set(entryIndex, newEntry);
 					}
-					return entry.getValue();						
+					return mappedEntry;						
 				}
 				nextOffset = offsets.get(entryIndex);
 			}
 			/*
 			 *  Not found, insert the new entry.
 			 */
-			Entry<K,V> entry = new Entry<K,V>(key, value, hashCode);
-			placeWithinHopRange(bucketIndex, entry);
+			placeWithinHopRange(bucketIndex, newEntry);
 			entryCount++;
 			mapEntryCount.incrementAndGet();
 			return null;
 		}
 	
 		
-		private Entry<K,V> get(Object key, long hashValue) {
+		private E get(Object entryKey, long hashCode) {
 			/*
 			 * In very high update-rate environments, it might be
 			 * necessary to limit re-tries, and go to a linear search of
@@ -659,7 +534,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			 */
 			int localRetrys = 0;
 			// assert sharedBits(hashValue) == sharedBits;
-			int bucketIndex = bucketIndex(hashValue);
+			int bucketIndex = bucketIndex(hashCode);
 			int oldTimeStamp, newTimeStamp = 0;
 			try {
 				retry:
@@ -668,23 +543,24 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 					int nextOffset = buckets.get(bucketIndex);
 					while (nextOffset != NULL_OFFSET) {
 						int nextIndex = wrapIndex(bucketIndex + nextOffset);
-						Entry<K,V> entry = entries.get(nextIndex);
-						if (entry == null) {
+						E mappedEntry = entries.get(nextIndex);
+						long entryHashCode = entryAdapter.getLongHashCode(mappedEntry);
+						if (mappedEntry == null) {
 							/*
 							 * Concurrent update, re-try.
 							 */
 							localRetrys++;
 							continue retry;
 						}
-						if (bucketIndex(entry.getLongHashCode()) != bucketIndex) {
+						if (bucketIndex(entryHashCode) != bucketIndex) {
 							/*
 							 * Concurrent update, re-try.
 							 */
 							localRetrys++;
 							continue retry;
 						}
-						if (entry.getLongHashCode() == hashValue && keyAdapter.keyMatches(entry.getKey(),key)) {
-							return entry;
+						if (entryHashCode == hashCode && entryAdapter.keyMatches(mappedEntry, entryKey)) {
+							return mappedEntry;
 						}
 						nextOffset = offsets.get(nextIndex);
 					}
@@ -734,11 +610,11 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 */
 		private int recycle(int freeSlotIndex) {
 			int adjacentEntryIndex = (freeSlotIndex - 1) & indexMask;
-			Entry<K,V> adjacentEntry = entries.get(adjacentEntryIndex);
+			E adjacentEntry = entries.get(adjacentEntryIndex);
 			if (adjacentEntry != null) {
 				int adjacentEntryNextOffset = offsets.get(adjacentEntryIndex);
 				if (adjacentEntryNextOffset != NULL_OFFSET) {
-					int contractingBucketIndex = bucketIndex(adjacentEntry.getLongHashCode());
+					int contractingBucketIndex = bucketIndex(entryAdapter.getLongHashCode(adjacentEntry));
 					int movingEntryIndex = 
 							wrapIndex(contractingBucketIndex + adjacentEntryNextOffset);
 					entries.set(freeSlotIndex, entries.get(movingEntryIndex));
@@ -757,14 +633,14 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			return 0;
 		}
 
+		
+		
 		/*
 		 * Public remove() delegates to this method on the appropriate segment.
 		 * The segment has already been locked by the calling thread. 
 		 */
-		private V remove(Object key, long hashValue, Object value) {
-			// assert sharedBits(hashValue) == sharedBits;
-			int bucketIndex = bucketIndex(hashValue);			
-			V resultValue = null;
+		private E remove(Object entryKey, long hashCode, LargeHashCore.RemoveHandler<E> handler) {
+			int bucketIndex = bucketIndex(hashCode);			
 			int nextOffset = buckets.get(bucketIndex);
 			if (nextOffset == NULL_OFFSET) {
 				return null;
@@ -774,14 +650,13 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			 * since the buckets array is updated.
 			 */
 			int nextIndex = wrapIndex(bucketIndex + nextOffset);
-			Entry<K,V> entry = entries.get(nextIndex);
+			E mappedEntry = entries.get(nextIndex);
 			// assert entry != null;
-			if (entry.getLongHashCode() == hashValue && keyAdapter.keyMatches(entry.getKey(),key)) {
+			if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.keyMatches(mappedEntry, entryKey)) {
 				/*
 				 * First entry in the bucket was the key to be removed.
 				 */
-				resultValue = entry.getValue();
-				if (value != null && !value.equals(resultValue)) {
+				if (handler != null && !handler.remove(mappedEntry)) {
 					return null;
 				}
 				/*
@@ -804,7 +679,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 					}
 					
 				}
-				return resultValue;
+				return mappedEntry;
 			} 
 			
 			/*
@@ -816,12 +691,12 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 				int prevIndex = nextIndex;
 				nextIndex = wrapIndex(bucketIndex + nextOffset);
 				nextOffset = offsets.get(nextIndex);
-				entry = entries.get(nextIndex);
-				if (entry.getLongHashCode() == hashValue && keyAdapter.keyMatches(entry.getKey(),key)) {
-					resultValue =  entry.getValue();
-					if (value != null && !value.equals(resultValue)) {
+				mappedEntry = entries.get(nextIndex);
+				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.keyMatches(mappedEntry, entryKey)) {					
+					if (handler != null && !handler.remove(mappedEntry)) {
 						return null;
 					}
+
 					/*
 					 * Serialization point:
 					 */
@@ -832,7 +707,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 					entryCount--;
 					mapEntryCount.decrementAndGet();
 					recycle(nextIndex);
-					return resultValue;
+					return mappedEntry;
 				}
 			}
 			/*
@@ -849,7 +724,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 * 
 		 * Returns the number of entries in the specified bucket.
 		 */
-		private int getBucket(int bucketIndex, Entry<K,V>[] bucketContents) {
+		private int getBucket(int bucketIndex, E[] bucketContents) {
 			int localRetrys = 0;
 			/*
 			 * In very high update-rate environments, it might be
@@ -880,7 +755,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 					}
 					while (nextOffset != NULL_OFFSET) {
 						int nextIndex = wrapIndex(bucketIndex + nextOffset);
-						Entry<K,V> entry = entries.get(nextIndex);
+						E entry = entries.get(nextIndex);
 						if (entry == null) {
 							/*
 							 * Concurrent update, try again.
@@ -888,7 +763,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 							localRetrys++;
 							continue retry;
 						}
-						if (bucketIndex(entry.getLongHashCode()) != bucketIndex) {
+						if (bucketIndex(entryAdapter.getLongHashCode(entry)) != bucketIndex) {
 							/*
 							 * Concurrent update, try again.
 							 */
@@ -988,7 +863,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	private static class SegmentOverflowException extends Exception {
 		private static final long serialVersionUID = -5917984727339916861L;	
 	}	
-
+	
 	private static int nextPowerOfTwo(int num) {
 		if (num > 1 << 30) {
 			return 1 << 30;
@@ -1000,55 +875,15 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		return i;
 	}
 
-	private final LargeHashMap.KeyAdapter<K> keyAdapter;
+	private final LargeHashCore.EntryAdapter<E> entryAdapter;
 	
-	/** Creates a new, empty map with the specified segment size, initial 
-	 * segment count, load threshold, and key adapter.
-	 * <h4>Segmentation considerations</h4>
-	 * By judiciously choosing segment size and initial segment count, the 
-	 * programmer can make trade-offs that will affect performance. The following
-	 * observations should be considered:
-	 * <ul>
-	 * <li>The initial segment count determines the initial limit of update 
-	 * concurrency. As the map expands, so does the opportunity for update 
-	 * concurrency.
-	 * <li>The cost of a segment split and the duration of the lock on a segment
-	 * being split are proportional to segment size.
-	 * <li>Given a constant map growth rate, the frequency of segment splits is 
-	 * inversely proportional to segment size.
-	 * <li>For a given map size, directory size is inversely proportional 
-	 * to segment size.
-	 * <li>Given a constant map growth rate, the cost of directory expansion 
-	 * doubles each time expansion occurs, but the expected time until the next
-	 * expansion also doubles; the aggregate cost of directory expansion remains 
-	 * constant, but it is paid in larger increments that happen less frequently.
-	 * <li>Doubling the directory is less expensive than splitting a segment of 
-	 * the same size. When a directory is doubled, the contents of the directory 
-	 * array are simply duplicated into the top half of the new directory. 
-	 * Splitting a segment requires insertion into the new segments, which may entail 
-	 * collision resolution.
-	 * <li>Contention for locks on the directory is not expected to be significant;
-	 * most locks (excluding those involving directory expansion) are held only 
-	 * briefly (just long enough to assign two references in the directory), and 
-	 * directory locks block only updates that force segment splits.
-	 * </ul>
-	 * A proposed rule of thumb for determining segment size: If the expected 
-	 * maximum map size is N, set segment size on the order of 
-	 * &radic;<span style="text-decoration:overline;">&nbsp;N&nbsp;</span>. This
-	 * results in roughly equal segment and directory sizes at expected capacity. 
-	 * Note that, if the specified segment size is not a power of two, it will be 
-	 * forced to the next largest power of two.
-	 *  
-	 * @param segSize size of segments, forced to the next largest power of two
-	 * @param initSegCount number of segments created initially
-	 * @param loadThreshold fractional threshold for map growth, observed at 
-	 * the segment level
-	 * @param keyAdapter key adapter to be used by this map instance
-	 * 
-	 * @see org.logicmill.util.LargeHashMap.KeyAdapter
+	/**
+	 * @param segSize
+	 * @param initSegCount
+	 * @param loadThreshold
+	 * @param entryAdapter
 	 */
-	public ConcurrentLargeHashMap(int segSize, int initSegCount, float loadThreshold, 
-			KeyAdapter<K> keyAdapter) {
+	public ConcurrentLargeHashCore(int segSize, int initSegCount, float loadThreshold, EntryAdapter<E> entryAdapter) {
 					
 		segSize = nextPowerOfTwo(segSize);		
 		initSegCount = nextPowerOfTwo(initSegCount);
@@ -1071,8 +906,8 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			loadThreshold = MAX_LOAD_THRESHOLD;
 		}
 		
-		if (keyAdapter == null) {
-			throw new NullPointerException("keyAdapter must be non-null");
+		if (entryAdapter == null) {
+			throw new NullPointerException("entryAdapter must be non-null");
 		}
 		
 		int initDirCapacity = initSegCount;
@@ -1094,64 +929,154 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		directory = new AtomicReference<AtomicReferenceArray<Segment>>(dir);
 		mapEntryCount = new AtomicLong(0L);
 		
-		this.keyAdapter = keyAdapter;
-	}
-	
-	/** Creates a new, empty map with the specified segment size, initial 
-	 * segment count, load threshold, and a default key adapter 
-	 * implementation (see {@link 
-	 * #ConcurrentLargeHashMap(int, int, float, LargeHashMap.KeyAdapter)} for
-	 * a discussion of segmentation issues).
-	 * <h4>Default key adapter</h4>
-	 * The default key adapter implementation expects key objects to implement
-	 * {@link LongHashable}. Specifically:
-	 * <ul>
-	 * <li> If the key can be cast to {@link LongHashable}, the default
-	 * key adapter implementation of {@code getLongHashCode()} returns {@code 
-	 * ((LongHashable)key).getLongHashCode()}. Otherwise, a
-	 * {@code ClassCastException} is thrown.
-	 * <li> The default key adapter implementation of 
-	 * {@code keyMatches(K mappedKey, Object key)} delegates to {@code
-	 * mappedKey.equals(key)}.
-	 * </ul>
-	 * @param segSize size of segments, forced to the next largest power of two
-	 * @param initSegCount number of segments created initially
-	 * @param loadThreshold fractional threshold for map growth, observed at 
-	 * the segment level
-	 */
-	public ConcurrentLargeHashMap(int segSize, int initSegCount, float loadThreshold) {
-		this(segSize, initSegCount, loadThreshold, new DefaultKeyAdapter<K>());
+		this.entryAdapter = entryAdapter;
 	}
 
 	/**
-	 * {@inheritDoc}
+	 * @param segSize
+	 * @param initSegCount
+	 * @param loadThreshold
 	 */
+	public ConcurrentLargeHashCore(int segSize, int initSegCount, float loadThreshold) {
+		this(segSize, initSegCount, loadThreshold, new DefaultEntryAdapter<E>());
+	}
+
 	@Override
-	public V putIfAbsent(K key, V value) {
-		if (key == null || value == null) {
-			throw new NullPointerException();
+	public E replace(Object entryKey, LargeHashCore.ReplaceHandler<E> handler) {
+		long hashCode = entryAdapter.getLongHashCode(entryKey);
+		while (true) {
+			AtomicReferenceArray<Segment> dir = directory.get();
+			long dirMask = dir.length() - 1;
+			int segmentIndex = (int)(hashCode & (long)dirMask);
+			Segment seg = dir.get(segmentIndex);
+			seg.lock.lock();
+			try {
+				if (!seg.invalid) {
+					return seg.replace(entryKey, hashCode, handler);	
+				}
+			}
+			finally {
+				seg.lock.unlock();
+			}
 		}
-		return put(key, value, false);
+		
 	}
 	
-	/**
-	 * {@inheritDoc}
-	 */
 	@Override
-	public V put(K key, V value) {
-		if (key == null || value == null) {
+	public E replace(Object entryKey, E newEntry) {
+		long hashCode = entryAdapter.getLongHashCode(entryKey);
+		while (true) {
+			AtomicReferenceArray<Segment> dir = directory.get();
+			long dirMask = dir.length() - 1;
+			int segmentIndex = (int)(hashCode & (long)dirMask);
+			Segment seg = dir.get(segmentIndex);
+			seg.lock.lock();
+			try {
+				if (!seg.invalid) {
+					return seg.replace(entryKey, hashCode, newEntry);	
+				}
+			}
+			finally {
+				seg.lock.unlock();
+			}
+		}
+		
+	}
+
+	/*
+
+	@Override
+	public E replace(Object entryKey, E newEntry) {
+		if (entryKey == null || newEntry == null) {
 			throw new NullPointerException();
 		}
-		return put(key, value, true);
+		long hashCode = entryAdapter.getLongHashCode(entryKey);
+		return replace(entryKey, hashCode, null, newEntry);
+	}
+
+	@Override
+	public E replace(Object entryKey, Object oldEntry, E newEntry) {
+		if (entryKey == null || oldEntry == null || newEntry == null) {
+			throw new NullPointerException();
+		}
+		long hashCode = entryAdapter.getLongHashCode(entryKey);
+		return replace(entryKey, hashCode, oldEntry, newEntry);
 	}
 	
-	private V put(K key, V value, boolean replaceIfPresent) {
+	private E replace(Object entryKey, long hashCode, Object oldEntry, E newEntry) {
+		while (true) {
+			AtomicReferenceArray<Segment> dir = directory.get();
+			long dirMask = dir.length() - 1;
+			int segmentIndex = (int)(hashCode & (long)dirMask);
+			Segment seg = dir.get(segmentIndex);
+			seg.lock.lock();
+			try {
+				if (!seg.invalid) {
+					return seg.replace(entryKey, hashCode, oldEntry, newEntry);	
+				}
+			}
+			finally {
+				seg.lock.unlock();
+			}
+		}
+
+	}
+	*/
+
+	@Override
+	public E remove(Object entryKey) {
+		return remove(entryKey, null);
+	}
+	
+	@Override
+	public E remove(Object entryKey, LargeHashCore.RemoveHandler<E> handler) {
+		if (entryKey == null) {
+			throw new NullPointerException();
+		}
+		long hashCode = entryAdapter.getLongHashCode(entryKey);
+		while (true) {
+			AtomicReferenceArray<Segment> dir = directory.get();
+			int dirSize = dir.length();
+			long dirMask = dirSize - 1;
+			int segmentIndex = (int)(hashCode & (long)dirMask);
+			Segment seg = dir.get(segmentIndex);
+			seg.lock.lock();
+			try {
+				if (!seg.invalid) {
+					return seg.remove(entryKey, hashCode, handler);	
+				}
+			}
+			finally {
+				seg.lock.unlock();
+			}
+		}
+	}
+	
+		
+	@Override
+	public E put(E entry) {
+		if (entry == null) {
+			throw new NullPointerException();
+		}
+		return put(entry, true);
+	}
+	
+	@Override
+	public E putIfAbsent(E entry) {
+		if (entry == null) {
+			throw new NullPointerException();
+		}
+		return put(entry, false);
+	}
+	
+	
+	E put(E entry, boolean replaceIfPresent) {
 		retry:
 		while (true) {
 			AtomicReferenceArray<Segment> dir = directory.get();
 			int dirSize = dir.length();
 			long dirMask = dirSize - 1;
-			long hashCode = keyAdapter.getLongHashCode(key);
+			long hashCode = entryAdapter.getLongHashCode(entry);
 			int segmentIndex = (int)(hashCode & (long)dirMask);
 			Segment seg = dir.get(segmentIndex);
 			seg.lock.lock();
@@ -1165,7 +1090,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 				 */
 				if (seg.entryCount < loadThresholdLimit) {
 					try {
-						return seg.put(key, value, hashCode, replaceIfPresent);
+						return seg.put(entry, hashCode, replaceIfPresent);
 					} catch (SegmentOverflowException soe) {
 						if (GATHER_EVENT_DATA) {
 							forcedSplitCount.incrementAndGet();
@@ -1185,12 +1110,12 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 				if (GATHER_EVENT_DATA) {
 					split[0].copyMetrics(seg);
 				}
-				V result;
+				E result;
 				try {
 					if (split[0].sharedBitsMatchSegment(hashCode)) {
-						result = split[0].put(key, value, hashCode, replaceIfPresent);
+						result = split[0].put(entry, hashCode, replaceIfPresent);
 					} else if (split[1].sharedBitsMatchSegment(hashCode)) {
-						result = split[1].put(key, value, hashCode, replaceIfPresent);
+						result = split[1].put(entry, hashCode, replaceIfPresent);
 					} else {
 						throw new IllegalStateException("sharedBits conflict during segment split");
 					}
@@ -1251,39 +1176,44 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		}
 
 	}
-	
-	/**
-	 * {@inheritDoc}
-	 */
+
+
 	@Override
-	public V get(Object key) {
-		LargeHashMap.Entry<K,V> result = getEntry(key);
-		return result == null ? null : result.getValue();
+	public boolean contains(Object entryKey) {
+		if (entryKey == null) {
+			throw new NullPointerException();
+		}
+		return get(entryKey) != null;
 	}
 	
-	
 	@Override
-	public LargeHashMap.Entry<K,V> getEntry(Object key) {
-		if (key == null) {
+	public E get(Object entryKey) {
+		if (entryKey == null) {
 			throw new NullPointerException();
 		}
 		AtomicReferenceArray<Segment> dir = directory.get();
 		long dirMask = (long)(dir.length() - 1);
-		long hashCode = keyAdapter.getLongHashCode(key);
+		long hashCode = entryAdapter.getLongHashCode(entryKey);
 		Segment seg = dir.get((int)(hashCode & dirMask));
-		return seg.get(key, hashCode);
+		return seg.get(entryKey, hashCode);
 	}
-	
-	/**
-	 * {@inheritDoc}
-	 */
+
+
 	@Override
-	public V remove(Object key) {
-		if (key == null) {
-			throw new NullPointerException();
-		}
-		long hashCode = keyAdapter.getLongHashCode(key);
-		return remove(key, hashCode, null);
+	public boolean isEmpty() {
+		return mapEntryCount.get() == 0L;
+	}
+
+
+	@Override
+	public Iterator<E> iterator() {
+		return new EntryIterator();
+	}
+
+
+	@Override
+	public long size() {
+		return mapEntryCount.get();
 	}
 	
 	/*
@@ -1317,7 +1247,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		BitSet markedSegments;
 
 		private SegmentIterator() {
-			dir = ConcurrentLargeHashMap.this.directory.get();
+			dir = ConcurrentLargeHashCore.this.directory.get();
 			dirSize = dir.length();
 			markedSegments = new BitSet(dirSize);
 			nextSegmentIndex = 0;
@@ -1370,12 +1300,12 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		}		
 	}
 			
-	private class EntryIterator implements Iterator<LargeHashMap.Entry<K,V>> {
+	private class EntryIterator implements Iterator<E> {
 		
 		private final SegmentIterator segIter;
 		private Segment currentSegment;
 		int nextBucketIndex;
-		final Entry<K,V>[] currentBucket;
+		final E[] currentBucket;
 		int currentBucketSize;
 		int nextEntryIndex;
 		
@@ -1385,7 +1315,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			if (segIter.hasNext()) {
 				currentSegment = segIter.next();
 			}
-			currentBucket = new Entry[HOP_RANGE];
+			currentBucket = (E[])(new Object[HOP_RANGE]);
 			nextBucketIndex = 0; // index in currentSegment of the next bucket
 			currentBucketSize = 0;
 			nextEntryIndex = 0; // index in currentBucket of the next entry
@@ -1412,9 +1342,9 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		}
 						
 		@Override
-		public LargeHashMap.Entry<K,V> next() {
+		public E next() {
 			if (currentBucketSize > 0) {
-				Entry<K,V> entry = currentBucket[nextEntryIndex++];
+				E entry = currentBucket[nextEntryIndex++];
 				/*
 				 * Prime the iterator with the next entry, if there is one.
 				 */
@@ -1438,133 +1368,6 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			throw new UnsupportedOperationException();
 		}		
 
-	}
-	
-	
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public Iterator<LargeHashMap.Entry<K,V>> getEntryIterator() {
-		return new EntryIterator();
-	}
-
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public long size() {
-		return mapEntryCount.get();
-	}
-
-
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public boolean containsKey(Object key) {
-		if (key == null) {
-			throw new NullPointerException();
-		}
-		return get(key) != null;
-	}
-
-
-	
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public boolean remove(Object key, Object value) {
-		if (key == null || value == null) {
-			throw new NullPointerException();
-		}
-		long hashCode = keyAdapter.getLongHashCode(key);
-		return remove(key, hashCode, value) != null;
-
-	}
-	
-	V remove(Object key, long hashCode, Object value) {
-		while (true) {
-			AtomicReferenceArray<Segment> dir = directory.get();
-			int dirSize = dir.length();
-			long dirMask = dirSize - 1;
-			int segmentIndex = (int)(hashCode & (long)dirMask);
-			Segment seg = dir.get(segmentIndex);
-			seg.lock.lock();
-			try {
-				if (!seg.invalid) {
-					return seg.remove(key, hashCode, value);	
-				}
-			}
-			finally {
-				seg.lock.unlock();
-			}
-		}
-		
-	}
-
-
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public V replace(Object key, V value) {
-		if (key == null || value == null) {
-			throw new NullPointerException();
-		}
-		long hashValue = keyAdapter.getLongHashCode(key);
-		while (true) {
-			AtomicReferenceArray<Segment> dir = directory.get();
-			long dirMask = dir.length() - 1;
-			int segmentIndex = (int)(hashValue & (long)dirMask);
-			Segment seg = dir.get(segmentIndex);
-			seg.lock.lock();
-			try {
-				if (!seg.invalid) {
-					return seg.replace(key, hashValue, null, value);	
-				}
-			}
-			finally {
-				seg.lock.unlock();
-			}
-		}
-	}
-
-
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public boolean replace(Object key, Object oldValue, V newValue) {
-		if (key == null || oldValue == null || newValue == null) {
-			throw new NullPointerException();
-		}
-		long hashValue = keyAdapter.getLongHashCode(key);
-		while (true) {
-			AtomicReferenceArray<Segment> dir = directory.get();
-			long dirMask = dir.length() - 1;
-			int segmentIndex = (int)(hashValue & (long)dirMask);
-			Segment seg = dir.get(segmentIndex);
-			seg.lock.lock();
-			try {
-				if (!seg.invalid) {
-					return seg.replace(key, hashValue, oldValue, newValue) != null;	
-				}
-			}
-			finally {
-				seg.lock.unlock();
-			}
-		}
-	}
-
-
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public boolean isEmpty() {
-		return mapEntryCount.get() == 0L;
 	}
 
 }

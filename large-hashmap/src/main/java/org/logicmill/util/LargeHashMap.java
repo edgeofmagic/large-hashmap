@@ -96,13 +96,13 @@ public interface LargeHashMap<K, V> {
 		/** Returns the key corresponding to this entry.
 		 * @return the key corresponding to this entry
 		 */
-		public K getKey();
+		K getKey();
 		
 		/** Returns the value associated with the key corresponding to 
 		 * this entry.
 		 * @return the value corresponding to this entry
 		 */
-		public V getValue();
+		V getValue();
 	}
 	
 	/**
@@ -207,7 +207,7 @@ public interface LargeHashMap<K, V> {
 		 * @param key key for which the hash code is returned
 		 * @return 64-bit hash code for the specified key
 		 */
-		public long getLongHashCode(Object key);
+		long getLongHashCode(Object key);
 		
 		/** Returns true if the specified keys are considered to match for the
 		 * purposes of retrieval from a hash map.
@@ -241,7 +241,7 @@ public interface LargeHashMap<K, V> {
 		 * @param key key parameter to be compared with {@code mapKey}
 		 * @return true if the keys match
 		 */
-		public boolean keyMatches(K mapKey, Object key);
+		boolean keyMatches(K mapKey, Object key);
 	}
 	
 	/**
@@ -254,7 +254,7 @@ public interface LargeHashMap<K, V> {
 	 * @return {@code true} if this map contains a mapping for the specified key 
 	 * @throws NullPointerException if {@code key} is null
 	 */
-	public boolean containsKey(Object key);
+	boolean containsKey(Object key);
 	
 	/** Returns the value to which the specified key is mapped, or {@code null} 
 	 * if this map contains no mapping for the key. More formally, if this map 
@@ -269,7 +269,14 @@ public interface LargeHashMap<K, V> {
 	 * if this map contains no mapping for the key
 	 * @throws NullPointerException if {@code key} is {@code null}
 	 */
-	public V get(Object key);
+	V get(Object key);
+	
+	
+	/**
+	 * @param key
+	 * @return and entry containing the matching key and its associated value
+	 */
+	Entry<K,V> getEntry(Object key);
 
 	/** Associates the specified value with the specified key in this map, only
 	 * if the specified key is not already present in the map. This is 
@@ -285,7 +292,7 @@ public interface LargeHashMap<K, V> {
 	 * {@code null} if there was no mapping for the key 
 	 * @throws NullPointerException if {@code key} or {@code value} is {@code null}
 	 */
-	public V putIfAbsent(K key, V value);
+	V putIfAbsent(K key, V value);
 	
 	
 	/** Associates the specified value with the specified key in this map. If 
@@ -298,7 +305,7 @@ public interface LargeHashMap<K, V> {
 	 * there was no mapping for {@code key}
 	 * @throws NullPointerException if {@code key} or {@code value} is {@code null}
 	 */
-	public V put(K key, V value);
+	V put(K key, V value);
 
 	/** Removes the mapping for the specified key from this map if it is 
 	 * present. More formally, if this map contains a mapping from a key 
@@ -313,7 +320,7 @@ public interface LargeHashMap<K, V> {
 	 * there was no mapping for key
 	 * @throws NullPointerException if {@code key} is null
 	 */
-	public V remove(Object key);
+	V remove(Object key);
 	
 	/**
 	 * Removes the entry for a key only if currently mapped to a given value. 
@@ -329,14 +336,14 @@ public interface LargeHashMap<K, V> {
 	 * @return {@code true} if the value was removed
 	 * @throws NullPointerException if {@code key} or {@code value} is {@code null}
 	 */
-	public boolean remove(Object key, Object value);
+	boolean remove(Object key, Object value);
 	
 	/**
 	 * Replaces the entry for a key only if currently mapped to some value. 
 	 * This is equivalent to
 	 * <pre><code>
 	 *	if (map.containsKey(key)) {
-	 *		return map.put(key, value);
+	 *		return map.put(map.getEntry(key).getKey(), value);
 	 *	} else return null;</code></pre>
 	 * except that the action is performed atomically.
 	 * @param key key with which the specified value is associated
@@ -344,16 +351,17 @@ public interface LargeHashMap<K, V> {
 	 * @return the previous value associated with the specified key, or {@code null} if there was no mapping for the key. 
 	 * @throws NullPointerException if {@code key} or {@code value} is {@code null}
 	 */
-	public V replace(Object key, V value);
+	V replace(Object key, V value);
 	
 	/**
 	 * Replaces the entry for a key only if currently mapped to a given value. 
 	 * This is equivalent to<pre><code>
-	 *	if (map.containsKey(key) && map.get(key).equals(value)) {
-	 *		map.put(key, newValue);
+	 *	if (map.containsKey(key) && map.get(key).equals(oldValue)) {
+	 *		map.put(map.getEntry(key).getKey(), newValue);
 	 *		return true;
 	 *	} else return false;</code></pre>
-	 * except that the action is performed atomically. 
+	 * except that the action is performed atomically, and with a lot less
+	 * thrashing about than this description suggests. 
 	 * @param key key with which the specified value is associated
 	 * @param oldValue value expected to be associated with the specified key
 	 * @param newValue value to be associated with the specified key 
@@ -361,24 +369,24 @@ public interface LargeHashMap<K, V> {
 	 * @throws NullPointerException if {@code key}, {@code oldValue} or 
 	 * {@code newValue} is {@code null}
 	 */
-	public boolean replace(Object key, V oldValue, V newValue);
+	boolean replace(Object key, Object oldValue, V newValue);
 	
 	/** Returns the number of key-value entries in this map.
 	 * @return the number of key-value entries in this map
 	 */
-	public long size();
+	long size();
 	
 	/**
 	 * Returns {@code true} if this map contains no key-value mappings.
 	 * @return {@code true} if this map contains no key-value mappings
 	 */
-	public boolean isEmpty();
+	boolean isEmpty();
 
 	/** Returns an iterator over the entries contained in this map.
 	 * <p>There are no guarantees concerning the order in which the entries 
 	 * are returned.
 	 * @return an iterator over the entries in this map
 	 */
-	public Iterator<LargeHashMap.Entry<K,V>> getEntryIterator();
+	 Iterator<Entry<K,V>> getEntryIterator();
 
 }
