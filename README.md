@@ -76,6 +76,15 @@ and the hash map. The hash map uses a key adapter to obtain 64-bit
 hash codes for keys, and to perform matching operations between keys
 stored in the map and keys passed as method parameters. 
 
+<h4>SpookyHash</h4>
+The quality of the hash function used with the hash map directly 
+affects overall performance. An implementation of Bob Jenkins' 
+SpookyHash V2<a href="#footnote-4"><sup>[4]</sup></a> 
+algorithm is included in this project, and is highly recommended. The performance
+of SpookyHash, with respect to both speed and the statistical properties of 
+the resulting hash codes, compares favorably among
+hashing algorithms that produce 64- or 128-bit results.
+
 <h3>Version 0.2.0.vopt</h3>
 This branch features performance improvements and reductions in memory requirements 
 resulting from the use of volatile byte arrays (rather than atomic integer arrays)
@@ -87,14 +96,6 @@ the JDK's public interface. The differences in this branch are relatively small,
 they should be able to be merged with (relative) ease to other branches that introduce
 new features or functions, as deemed appropriate.
 
-<h4>SpookyHash</h4>
-The quality of the hash function used with the hash map directly 
-affects overall performance. An implementation of Bob Jenkins' 
-SpookyHash V2<a href="#footnote-4"><sup>[4]</sup></a> 
-algorithm is included in this project, and is highly recommended. The performance
-of SpookyHash, with respect to both speed and the statistical properties of 
-the resulting hash codes, compares favorably among
-hashing algorithms that produce 64- or 128-bit results.
 <p id="footnote-1"><sup>[1]</sup> <a href="http://dx.doi.org/10.1145%2F320083.320092"> Fagin, et al, 
 "Extendible Hashing - A Fast Access Method for Dynamic Files", 
 ACM TODS Vol. 4 No. 3, Sept. 1979</a></p>
