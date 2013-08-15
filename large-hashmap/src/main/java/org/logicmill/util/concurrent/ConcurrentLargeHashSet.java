@@ -11,7 +11,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.logicmill.util.LargeHashCore;
+//import org.logicmill.util.LargeHashCore;
+import org.logicmill.util.LargeHashSet;
 import org.logicmill.util.LongHashable;
 
 /**
@@ -19,10 +20,10 @@ import org.logicmill.util.LongHashable;
  *
  * @param <E>
  */
-public class ConcurrentLargeHashCore<E> implements LargeHashCore<E> {
+public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 
 	
-	private static class DefaultEntryAdapter<E> implements LargeHashCore.EntryAdapter<E> {
+	private static class DefaultEntryAdapter<E> implements LargeHashSet.EntryAdapter<E> {
 
 		@Override
 		public long getLongHashCode(Object entryKey) {
@@ -38,6 +39,14 @@ public class ConcurrentLargeHashCore<E> implements LargeHashCore<E> {
 			return mappedEntry.equals(entryKey);
 		}
 
+	}
+	
+	abstract static class RemoveHandler<E> {
+		abstract boolean remove(E mappedEntry);
+	}
+	
+	abstract static class ReplaceHandler<E> {
+		abstract E replaceWith(E mappedEntry);
 	}
 
 	
@@ -205,7 +214,7 @@ public class ConcurrentLargeHashCore<E> implements LargeHashCore<E> {
 		 */
 		@SuppressWarnings("unchecked")
 		private Segment[] split() {
-			Segment[] splitPair = new ConcurrentLargeHashCore.Segment[2];
+			Segment[] splitPair = new ConcurrentLargeHashSet.Segment[2];
 			int  newLocalDepth = localDepth + 1;
 			int newSharedBitMask = 1 << localDepth;
 			splitPair[0] = new Segment(newLocalDepth, sharedBits);
@@ -264,7 +273,7 @@ public class ConcurrentLargeHashCore<E> implements LargeHashCore<E> {
 		 * findCloserSlot() constitute the core of the Hopscotch hashing 
 		 * algorithm implementation.
 		 */
-		void placeWithinHopRange(int bucketIndex, E entry) 
+		private void placeWithinHopRange(int bucketIndex, E entry) 
 				throws SegmentOverflowException {
 			int freeSlotOffset = 0;
 			int freeSlotIndex = bucketIndex;
@@ -440,7 +449,7 @@ public class ConcurrentLargeHashCore<E> implements LargeHashCore<E> {
 		
 		}
 		
-		private E replace(Object entryKey, long hashCode, LargeHashCore.ReplaceHandler<E> handler) {
+		private E replace(Object entryKey, long hashCode, ReplaceHandler<E> handler) {
 			int bucketIndex = bucketIndex(hashCode);
 			/*
 			 * Search for entry with key
@@ -639,7 +648,7 @@ public class ConcurrentLargeHashCore<E> implements LargeHashCore<E> {
 		 * Public remove() delegates to this method on the appropriate segment.
 		 * The segment has already been locked by the calling thread. 
 		 */
-		private E remove(Object entryKey, long hashCode, LargeHashCore.RemoveHandler<E> handler) {
+		private E remove(Object entryKey, long hashCode, RemoveHandler<E> handler) {
 			int bucketIndex = bucketIndex(hashCode);			
 			int nextOffset = buckets.get(bucketIndex);
 			if (nextOffset == NULL_OFFSET) {
@@ -875,7 +884,7 @@ public class ConcurrentLargeHashCore<E> implements LargeHashCore<E> {
 		return i;
 	}
 
-	private final LargeHashCore.EntryAdapter<E> entryAdapter;
+	private final LargeHashSet.EntryAdapter<E> entryAdapter;
 	
 	/**
 	 * @param segSize
@@ -883,7 +892,7 @@ public class ConcurrentLargeHashCore<E> implements LargeHashCore<E> {
 	 * @param loadThreshold
 	 * @param entryAdapter
 	 */
-	public ConcurrentLargeHashCore(int segSize, int initSegCount, float loadThreshold, EntryAdapter<E> entryAdapter) {
+	public ConcurrentLargeHashSet(int segSize, int initSegCount, float loadThreshold, EntryAdapter<E> entryAdapter) {
 					
 		segSize = nextPowerOfTwo(segSize);		
 		initSegCount = nextPowerOfTwo(initSegCount);
@@ -937,12 +946,11 @@ public class ConcurrentLargeHashCore<E> implements LargeHashCore<E> {
 	 * @param initSegCount
 	 * @param loadThreshold
 	 */
-	public ConcurrentLargeHashCore(int segSize, int initSegCount, float loadThreshold) {
+	public ConcurrentLargeHashSet(int segSize, int initSegCount, float loadThreshold) {
 		this(segSize, initSegCount, loadThreshold, new DefaultEntryAdapter<E>());
 	}
 
-	@Override
-	public E replace(Object entryKey, LargeHashCore.ReplaceHandler<E> handler) {
+	E replace(Object entryKey, ReplaceHandler<E> handler) {
 		long hashCode = entryAdapter.getLongHashCode(entryKey);
 		while (true) {
 			AtomicReferenceArray<Segment> dir = directory.get();
@@ -962,8 +970,8 @@ public class ConcurrentLargeHashCore<E> implements LargeHashCore<E> {
 		
 	}
 	
-	@Override
-	public E replace(Object entryKey, E newEntry) {
+
+	E replace(Object entryKey, E newEntry) {
 		long hashCode = entryAdapter.getLongHashCode(entryKey);
 		while (true) {
 			AtomicReferenceArray<Segment> dir = directory.get();
@@ -1028,8 +1036,8 @@ public class ConcurrentLargeHashCore<E> implements LargeHashCore<E> {
 		return remove(entryKey, null);
 	}
 	
-	@Override
-	public E remove(Object entryKey, LargeHashCore.RemoveHandler<E> handler) {
+
+	E remove(Object entryKey, RemoveHandler<E> handler) {
 		if (entryKey == null) {
 			throw new NullPointerException();
 		}
@@ -1052,17 +1060,20 @@ public class ConcurrentLargeHashCore<E> implements LargeHashCore<E> {
 		}
 	}
 	
-		
+	
 	@Override
-	public E put(E entry) {
+	public boolean add(E entry) {
+		return putIfAbsent(entry) == null;
+	}
+		
+	E put(E entry) {
 		if (entry == null) {
 			throw new NullPointerException();
 		}
 		return put(entry, true);
 	}
 	
-	@Override
-	public E putIfAbsent(E entry) {
+	E putIfAbsent(E entry) {
 		if (entry == null) {
 			throw new NullPointerException();
 		}
@@ -1247,7 +1258,7 @@ public class ConcurrentLargeHashCore<E> implements LargeHashCore<E> {
 		BitSet markedSegments;
 
 		private SegmentIterator() {
-			dir = ConcurrentLargeHashCore.this.directory.get();
+			dir = ConcurrentLargeHashSet.this.directory.get();
 			dirSize = dir.length();
 			markedSegments = new BitSet(dirSize);
 			nextSegmentIndex = 0;

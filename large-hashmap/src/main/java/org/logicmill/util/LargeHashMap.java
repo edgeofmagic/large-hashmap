@@ -91,7 +91,7 @@ public interface LargeHashMap<K, V> {
 	 * @param <K> type of keys associated with values in this map entry
 	 * @param <V> type of values associated with keys in this map entry
 	 */
-	public interface Entry<K,V> {
+	public interface Entry<K,V> extends LongHashable {
 		
 		/** Returns the key corresponding to this entry.
 		 * @return the key corresponding to this entry
@@ -388,5 +388,10 @@ public interface LargeHashMap<K, V> {
 	 * @return an iterator over the entries in this map
 	 */
 	 Iterator<Entry<K,V>> getEntryIterator();
+	 
+	 /**
+	 * @return
+	 */
+	LargeHashSet<Entry<K,V>> entrySet();
 
 }

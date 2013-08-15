@@ -71,7 +71,7 @@ public class ConcurrentLargeHashMapTest {
 			if (key instanceof byte[]) {
 				return org.logicmill.util.hash.SpookyHash64.hash((byte[])key,  0L);							
 			} else {
-				throw new IllegalArgumentException("key must be type byte[]");
+				throw new IllegalArgumentException(String.format("key must be type byte[]; was type %s", key.getClass().getName()) );
 			}
 		}
 		
