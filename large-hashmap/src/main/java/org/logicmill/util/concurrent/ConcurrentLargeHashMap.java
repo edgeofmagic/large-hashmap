@@ -109,7 +109,7 @@ public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 		}
 
 		@Override
-		public boolean keyMatches(LargeHashMap.Entry<K,V> mappedEntry, Object key) {
+		public boolean entryMatches(LargeHashMap.Entry<K,V> mappedEntry, Object key) {
 			if (key instanceof Entry<?,?>) {
 				return mapKeyAdapter.keyMatches(mappedEntry.getKey(), ((Entry<?,?>)key).getKey());
 			} else {

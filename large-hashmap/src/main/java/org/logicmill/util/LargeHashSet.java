@@ -6,7 +6,7 @@ public interface LargeHashSet<E> extends Iterable<E> {
 	
 	public interface EntryAdapter<E> {
 		long getLongHashCode(Object entryKey);
-		boolean keyMatches(E mappedEntry, Object entryKey);
+		boolean entryMatches(E mappedEntry, Object entryKey);
 	}
 
 	boolean add(E entry);
@@ -20,5 +20,7 @@ public interface LargeHashSet<E> extends Iterable<E> {
 	long size();
 
 	E get(Object entryKey);
+	
+	
 
 }

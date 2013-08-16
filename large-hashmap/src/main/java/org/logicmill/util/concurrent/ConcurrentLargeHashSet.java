@@ -35,7 +35,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 		}
 
 		@Override
-		public boolean keyMatches(E mappedEntry, Object entryKey) {
+		public boolean entryMatches(E mappedEntry, Object entryKey) {
 			return mappedEntry.equals(entryKey);
 		}
 
@@ -458,7 +458,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 			while (nextOffset != NULL_OFFSET) {
 				int entryIndex = wrapIndex(bucketIndex + nextOffset);
 				E mappedEntry = entries.get(entryIndex);
-				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.keyMatches(mappedEntry,entryKey)) {		
+				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.entryMatches(mappedEntry,entryKey)) {		
 					E newEntry = handler.replaceWith(mappedEntry);
 					if (newEntry == null) {
 						return null;
@@ -490,7 +490,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 			while (nextOffset != NULL_OFFSET) {
 				int entryIndex = wrapIndex(bucketIndex + nextOffset);
 				E mappedEntry = entries.get(entryIndex);
-				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.keyMatches(mappedEntry,entryKey)) {
+				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.entryMatches(mappedEntry,entryKey)) {
 					entries.set(entryIndex, newEntry);
 					return mappedEntry;						
 				}
@@ -517,7 +517,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 			while (nextOffset != NULL_OFFSET) {
 				int entryIndex = wrapIndex(bucketIndex + nextOffset);
 				E mappedEntry = entries.get(entryIndex);
-				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode  && entryAdapter.keyMatches(mappedEntry, newEntry)) {
+				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode  && entryAdapter.entryMatches(mappedEntry, newEntry)) {
 					if (replaceIfPresent) {
 						entries.set(entryIndex, newEntry);
 					}
@@ -568,7 +568,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 							localRetrys++;
 							continue retry;
 						}
-						if (entryHashCode == hashCode && entryAdapter.keyMatches(mappedEntry, entryKey)) {
+						if (entryHashCode == hashCode && entryAdapter.entryMatches(mappedEntry, entryKey)) {
 							return mappedEntry;
 						}
 						nextOffset = offsets.get(nextIndex);
@@ -661,7 +661,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 			int nextIndex = wrapIndex(bucketIndex + nextOffset);
 			E mappedEntry = entries.get(nextIndex);
 			// assert entry != null;
-			if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.keyMatches(mappedEntry, entryKey)) {
+			if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.entryMatches(mappedEntry, entryKey)) {
 				/*
 				 * First entry in the bucket was the key to be removed.
 				 */
@@ -701,7 +701,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 				nextIndex = wrapIndex(bucketIndex + nextOffset);
 				nextOffset = offsets.get(nextIndex);
 				mappedEntry = entries.get(nextIndex);
-				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.keyMatches(mappedEntry, entryKey)) {					
+				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.entryMatches(mappedEntry, entryKey)) {					
 					if (handler != null && !handler.remove(mappedEntry)) {
 						return null;
 					}
@@ -971,7 +971,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 	}
 	
 
-	E replace(Object entryKey, E newEntry) {
+	public E replace(Object entryKey, E newEntry) {
 		long hashCode = entryAdapter.getLongHashCode(entryKey);
 		while (true) {
 			AtomicReferenceArray<Segment> dir = directory.get();
@@ -1066,14 +1066,14 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 		return putIfAbsent(entry) == null;
 	}
 		
-	E put(E entry) {
+	public E put(E entry) {
 		if (entry == null) {
 			throw new NullPointerException();
 		}
 		return put(entry, true);
 	}
 	
-	E putIfAbsent(E entry) {
+	public E putIfAbsent(E entry) {
 		if (entry == null) {
 			throw new NullPointerException();
 		}
