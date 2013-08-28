@@ -501,6 +501,33 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 			 */
 			return null;	
 		}
+		
+		private E replace(Object entryKey, long hashCode, Object oldEntry, E newEntry) {
+			int bucketIndex  = bucketIndex(hashCode);
+			int nextOffset = buckets.get(bucketIndex);
+			while (nextOffset != NULL_OFFSET) {
+				int entryIndex = wrapIndex(bucketIndex + nextOffset);
+				E mappedEntry = entries.get(entryIndex);
+				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.entryMatches(mappedEntry, entryKey)) {
+					if (oldEntry != null) {
+						if (mappedEntry == oldEntry) {
+							entries.set(entryIndex, newEntry);
+							return mappedEntry;							
+						}
+						if (mappedEntry.equals(oldEntry)) {
+							entries.set(entryIndex, newEntry);
+							return mappedEntry;
+						}
+						return null;
+					} else {
+						entries.set(entryIndex, newEntry);
+						return mappedEntry;
+					}
+				}
+				nextOffset = offsets.get(entryIndex);
+			}
+			return null;
+		}
 			
 		/*
 		 * Implements put() and putIfAbsent() on the appropriate segment. The
@@ -972,6 +999,9 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 	
 
 	public E replace(Object entryKey, E newEntry) {
+		if (entryKey == null || newEntry == null) {
+			throw new NullPointerException();
+		}		
 		long hashCode = entryAdapter.getLongHashCode(entryKey);
 		while (true) {
 			AtomicReferenceArray<Segment> dir = directory.get();
@@ -990,6 +1020,35 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 		}
 		
 	}
+	
+	public E replace(Object entryKey, Object oldEntry, E newEntry) {
+		if (entryKey == null || oldEntry == null || newEntry == null) {
+			throw new NullPointerException();
+		}
+		long hashCode = entryAdapter.getLongHashCode(entryKey);
+		return replace(entryKey, hashCode, oldEntry, newEntry);
+	}
+	
+	private E replace(Object entryKey, long hashCode, Object oldEntry, E newEntry) {
+		while (true) {
+			AtomicReferenceArray<Segment> dir = directory.get();
+			long dirMask = dir.length() - 1;
+			int segmentIndex = (int)(hashCode & (long)dirMask);
+			Segment seg = dir.get(segmentIndex);
+			seg.lock.lock();
+			try {
+				if (!seg.invalid) {
+					return seg.replace(entryKey, hashCode, oldEntry, newEntry);	
+				}
+			}
+			finally {
+				seg.lock.unlock();
+			}
+		}
+
+	}
+
+
 
 	/*
 
