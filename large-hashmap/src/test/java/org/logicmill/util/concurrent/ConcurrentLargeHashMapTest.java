@@ -65,9 +65,9 @@ public class ConcurrentLargeHashMapTest {
 		System.out.printf("\tthreshold splits %d%n", mapProbe.getThresholdSplitCount());
 	}
 	
-	public static class ByteKeyAdapter implements LargeHashMap.KeyAdapter<byte[]> {
+	public static class ByteKeyAdapter extends AbstractKeyAdapter<byte[]> {
 		@Override
-		public long getLongHashCode(Object key) {
+		public long getKeyHashCode(Object key) {
 			if (key instanceof byte[]) {
 				return org.logicmill.util.hash.SpookyHash64.hash((byte[])key,  0L);							
 			} else {
@@ -76,7 +76,7 @@ public class ConcurrentLargeHashMapTest {
 		}
 		
 		@Override
-		public boolean keyMatches(byte[] mappedKey, Object key) {
+		public boolean keyMatches(Object key, byte[] mappedKey) {
 			if (key instanceof byte[]) {
 				byte[] byteKey = (byte[])key;
 				if (mappedKey.length != byteKey.length) return false;
@@ -88,9 +88,9 @@ public class ConcurrentLargeHashMapTest {
 		}
 	}
 	
-	public static class StringKeyAdapter implements LargeHashMap.KeyAdapter<String> {
+	public static class StringKeyAdapter extends AbstractKeyAdapter<String> {
 		@Override
-		public long getLongHashCode(Object key) {
+		public long getKeyHashCode(Object key) {
 			if (key instanceof CharSequence) { 
 				return org.logicmill.util.hash.SpookyHash64.hash((CharSequence)key,  0L); 
 			} else {
@@ -98,7 +98,7 @@ public class ConcurrentLargeHashMapTest {
 			}
 		}
 		@Override
-		public boolean keyMatches(String mappedKey, Object key) {
+		public boolean keyMatches(Object key, String mappedKey) {
 			if (key instanceof String) {
 				return mappedKey.equals(key);
 			} else if (key instanceof CharSequence) {
@@ -472,7 +472,7 @@ public class ConcurrentLargeHashMapTest {
 		}
 		for (int i = 0; i < keySet.size(); i++) {
 			Integer n = map.put(keySet.getKey(i), new Integer(-1));
-			Assert.assertNotNull(n);
+			Assert.assertNotNull("iteration " + i, n);
 			Assert.assertEquals(i, n.intValue());
 		}
         checkMapIntegrity(map);	

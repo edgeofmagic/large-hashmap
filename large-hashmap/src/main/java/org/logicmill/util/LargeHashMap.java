@@ -188,7 +188,7 @@ public interface LargeHashMap<K, V> {
 	 *
 	 * @param <K> The type of key associated with this adapter
 	 */
-	public interface KeyAdapter<K> {
+	public interface KeyAdapter<K> extends TypeAdapter<Entry<K,?>> {
 		
 		/** Returns a 64-bit hash code for the specified key. Implementations
 		 * of this method must provide the following guarantees:
@@ -207,6 +207,9 @@ public interface LargeHashMap<K, V> {
 		 * @param key key for which the hash code is returned
 		 * @return 64-bit hash code for the specified key
 		 */
+		long getKeyHashCode(Object key);
+		
+		@Override
 		long getLongHashCode(Object key);
 		
 		/** Returns true if the specified keys are considered to match for the
@@ -241,9 +244,19 @@ public interface LargeHashMap<K, V> {
 		 * @param key key parameter to be compared with {@code mapKey}
 		 * @return true if the keys match
 		 */
-		boolean keyMatches(K mapKey, Object key);
+		boolean keyMatches(Object key, K mapKey);
+		
+		@Override
+		boolean matches(Object obj, Entry<K,?> entry);
 	}
 	
+/*	public interface EntryAdapter<K,V> extends TypeAdapter<Entry<K,V>> {
+		
+		@Override
+		boolean matches(Object key, Entry<K,V> entry);
+		
+	}
+*/	
 	/**
 	 * Returns {@code true} if this map contains a mapping for the specified 
 	 * key. More formally, returns {@code true} f this map contains a mapping 
@@ -351,7 +364,7 @@ public interface LargeHashMap<K, V> {
 	 * @return the previous value associated with the specified key, or {@code null} if there was no mapping for the key. 
 	 * @throws NullPointerException if {@code key} or {@code value} is {@code null}
 	 */
-	V replace(Object key, V value);
+	V replace(K key, V value);
 	
 	/**
 	 * Replaces the entry for a key only if currently mapped to a given value. 
@@ -369,7 +382,7 @@ public interface LargeHashMap<K, V> {
 	 * @throws NullPointerException if {@code key}, {@code oldValue} or 
 	 * {@code newValue} is {@code null}
 	 */
-	boolean replace(Object key, Object oldValue, V newValue);
+	boolean replace(K key, V oldValue, V newValue);
 	
 	/** Returns the number of key-value entries in this map.
 	 * @return the number of key-value entries in this map

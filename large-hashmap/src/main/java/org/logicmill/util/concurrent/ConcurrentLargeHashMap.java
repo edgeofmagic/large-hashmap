@@ -2,9 +2,12 @@ package org.logicmill.util.concurrent;
 
 import java.util.Iterator;
 
+import org.logicmill.util.LargeHashCore;
+import org.logicmill.util.LargeHashCore.PutHandler;
 import org.logicmill.util.LargeHashMap;
 import org.logicmill.util.LargeHashSet;
 import org.logicmill.util.LongHashable;
+import org.logicmill.util.TypeAdapter;
 
 /**
  * @author David Curtis
@@ -14,8 +17,8 @@ import org.logicmill.util.LongHashable;
  */
 public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 	
-	private final ConcurrentLargeHashSet<LargeHashMap.Entry<K,V>> hashCore;
-	private final LargeHashMap.KeyAdapter<K> keyAdapter;
+	private final LargeHashCore<LargeHashMap.Entry<K,V>> hashCore;
+	private final LargeHashMap.KeyAdapter<K> keyAdapter; // only used locally for hashCode, should work for key or map adapter
 	
 	/**
 	 * @param segSize
@@ -23,8 +26,10 @@ public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 	 * @param loadFactorThreshold
 	 * @param keyAdapter
 	 */
-	public ConcurrentLargeHashMap(int segSize, int initSegCount, float loadFactorThreshold, LargeHashMap.KeyAdapter<K> keyAdapter) {
-		hashCore = new ConcurrentLargeHashSet<LargeHashMap.Entry<K,V>>(segSize, initSegCount, loadFactorThreshold, new SetKeyAdapter(keyAdapter));
+	public ConcurrentLargeHashMap(int segSize, int initSegCount,
+			float loadFactorThreshold, LargeHashMap.KeyAdapter<K> keyAdapter) {
+		hashCore = new ConcurrentLargeHashCore<LargeHashMap.Entry<K,V>>(
+				segSize, initSegCount, loadFactorThreshold, (TypeAdapter)keyAdapter);
 		this.keyAdapter = keyAdapter;
 	}
 	
@@ -34,14 +39,21 @@ public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 	 * @param loadFactorThreshold
 	 */
 	public ConcurrentLargeHashMap(int segSize, int initSegCount, float loadFactorThreshold) {
-		this(segSize, initSegCount, loadFactorThreshold, new DefaultKeyAdapter<K>());
+//		this(segSize, initSegCount, loadFactorThreshold, new DefaultMapAdapter());
+		
+		LargeHashMap.KeyAdapter<K> adapter = new DefaultKeyAdapter<K>();
+//		TypeAdapter<LargeHashMap.Entry<K,V>> adapter = (TypeAdapter) keyAdap;
+		hashCore = new ConcurrentLargeHashCore<LargeHashMap.Entry<K, V>> ( 
+				segSize, initSegCount, loadFactorThreshold, (TypeAdapter)adapter);
+		this.keyAdapter = adapter;		
+		
 	}
 	
 	/*
 	 * Default entry implementation, stores hash codes to avoid repeatedly 
 	 * computing them.
 	 */
-	private static class Entry<K,V> implements LargeHashMap.Entry<K, V>, LongHashable {
+	private static class Entry<K,V> implements LargeHashMap.Entry<K, V> {
 		private final K key;
 		private final V value;
 		private final long hashCode;
@@ -65,19 +77,16 @@ public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 		@Override
 		public long getLongHashCode() {
 			return hashCode;
-		}
-		
-		
-		
+		}		
 	}
 	
 	/*
 	 * Default key adapter. 
 	 */
-	private static class DefaultKeyAdapter<K> implements LargeHashMap.KeyAdapter<K> {
+	private static class DefaultKeyAdapter<K> extends AbstractKeyAdapter<K> {
 
 		@Override
-		public long getLongHashCode(Object key) {
+		public long getKeyHashCode(Object key) {
 			if (key instanceof LongHashable) {
 				return ((LongHashable)key).getLongHashCode();
 			} else {
@@ -86,144 +95,177 @@ public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 		}
 
 		@Override
-		public boolean keyMatches(K mapKey, Object key) {
+		public boolean keyMatches(Object key, K mapKey) {
 			return mapKey.equals(key);
 		}
-	}
-	
-	private class SetKeyAdapter implements LargeHashSet.EntryAdapter<LargeHashMap.Entry<K,V>> {
-		
-		private final LargeHashMap.KeyAdapter<K> mapKeyAdapter;
-		
-		private SetKeyAdapter(LargeHashMap.KeyAdapter<K> mapKeyAdapter) {
-			this.mapKeyAdapter = mapKeyAdapter;
-		}
-
-		@Override
-		public long getLongHashCode(Object key) {	
-			if (key instanceof Entry<?,?>) {
-				return ((LongHashable) key).getLongHashCode();
-			} else {
-				return mapKeyAdapter.getLongHashCode(key);
-			}
-		}
-
-		@Override
-		public boolean entryMatches(LargeHashMap.Entry<K,V> mappedEntry, Object key) {
-			if (key instanceof Entry<?,?>) {
-				return mapKeyAdapter.keyMatches(mappedEntry.getKey(), ((Entry<?,?>)key).getKey());
-			} else {
-				return mapKeyAdapter.keyMatches(mappedEntry.getKey(), key);
-			}
-		}
 
 	}
-
-
 
 	@Override
 	public boolean containsKey(Object key) {
 		if (key == null) throw new NullPointerException();
-		return hashCore.contains(key);
+		return hashCore.get(new MapMatchHandler(key)) != null;
 	}
 
 	@Override
 	public V get(Object key) {
 		if (key == null) throw new NullPointerException();
-		LargeHashMap.Entry<K,V> result = hashCore.get(key);
+		LargeHashMap.Entry<K,V> result = hashCore.get(new MapMatchHandler(key));
 		return result != null ? result.getValue() : null;
 	}
+	
+	private class MapMatchHandler implements LargeHashCore.MatchHandler<LargeHashMap.Entry<K, V>> {
 
-	@Override
-	public V putIfAbsent(K key, V value) {
-		if (key == null || value == null) throw new NullPointerException();
-		LargeHashMap.Entry<K,V> entry = new Entry<K,V>(key, value, keyAdapter.getLongHashCode(key));
-		LargeHashMap.Entry<K,V> result =  hashCore.putIfAbsent(entry);
-		return result != null ? result.getValue() : null ;
-	}
+		protected final Object key;
+		protected final long hashCode;
+		
+		private MapMatchHandler(final Object key) {
+			this.key = key;
+			this.hashCode = keyAdapter.getKeyHashCode(key); 
+		}
 
-	@Override
-	public V put(K key, V value) {
-		if (key == null || value == null) throw new NullPointerException();
-		Entry<K,V> entry = new Entry<K,V>(key, value, keyAdapter.getLongHashCode(key));
-		LargeHashMap.Entry<K,V> result =  hashCore.put(entry);
-		return result != null ? result.getValue() : null ;
-	}
-
-	@Override
-	public V remove(Object key) {
-		if (key == null) throw new NullPointerException();
-		LargeHashMap.Entry<K,V> result =  hashCore.remove(key);
-		return result != null ? result.getValue() : null ;
+		@Override
+		public boolean match(
+				org.logicmill.util.LargeHashMap.Entry<K, V> mappedEntry) {
+			if (mappedEntry.getLongHashCode() == hashCode && 
+					keyAdapter.keyMatches(key, mappedEntry.getKey())) {
+				return true;
+			} else {
+				return false;
+			}
+		}
+		
+		@Override
+		public long getLongHashCode() {
+			return hashCode;
+		}		
 	}
 	
-	private abstract class MapRemoveHandler extends ConcurrentLargeHashSet.RemoveHandler<LargeHashMap.Entry<K,V>> {
+	private class MapPutHandler extends MapMatchHandler implements PutHandler<LargeHashMap.Entry<K, V>> {
+		
+		protected final K key;
+		protected final V value;
+		
+		private MapPutHandler(final K key, final V value) {
+			super(key);
+			this.key = key;
+			this.value = value;
+		}
+
+		@Override
+		public LargeHashMap.Entry<K, V> getNewEntry() {
+			return new ConcurrentLargeHashMap.Entry<K, V>(key, value, hashCode);
+		}
+	}
+
+	private class ValueMatchRemoveHandler extends MapMatchHandler implements LargeHashCore.RemoveHandler<LargeHashMap.Entry<K,V>> {
 		
 		protected final Object value;
-		MapRemoveHandler(Object value) {
+		private ValueMatchRemoveHandler(Object key, Object value) {
+			super(key);
 			this.value = value;
 		}
 		
 		@Override
-		public abstract boolean remove(LargeHashMap.Entry<K,V> mappedEntry);
-	}
-
-	@Override
-	public boolean remove(Object key, Object value) {
-		if (key == null || value == null) throw new NullPointerException();
-		LargeHashMap.Entry<K,V> result = hashCore.remove(key, 
-		new MapRemoveHandler(value) {
-			@Override
-			public boolean remove(LargeHashMap.Entry<K, V> mappedEntry) {
-				if (mappedEntry.getValue().equals(this.value)) {
-					return true;
-				} else {
-					return false;
-				}
+		public boolean remove(LargeHashMap.Entry<K,V> mappedEntry) {
+			if (mappedEntry.getValue().equals(value)) {
+				return true;
+			} else {
+				return false;
 			}
-		});
-		return result != null;
-	}
-
-	private class MapReplaceHandler extends ConcurrentLargeHashSet.ReplaceHandler<LargeHashMap.Entry<K,V>> {
-		protected final V newValue;
-		MapReplaceHandler(V newValue) {
-			this.newValue = newValue;
-		}
-		@Override
-		public Entry<K,V> replaceWith(LargeHashMap.Entry<K,V> mappedEntry) {
-			return new Entry<K,V>(mappedEntry.getKey(), newValue, ((Entry<K,V>)mappedEntry).getLongHashCode());
-
 		}
 	}
 	
-	@Override
-	public V replace(Object key, V value) {
-		if (key == null || value == null) throw new NullPointerException();
-		LargeHashMap.Entry<K,V> result = hashCore.replace(key, new MapReplaceHandler(value));
-		return result != null ? result.getValue() : null;
+	private class KeyMatchRemoveHandler extends MapMatchHandler implements LargeHashCore.RemoveHandler<LargeHashMap.Entry<K,V>> {
+		
+		KeyMatchRemoveHandler(Object key) {
+			super(key);
+		}
+		
+		@Override
+		public boolean remove(LargeHashMap.Entry<K,V> mappedEntry) {
+			return true;
+		}
 	}
 
-	private class MapReplaceOldHandler extends ConcurrentLargeHashSet.ReplaceHandler<LargeHashMap.Entry<K,V>> {
+	private class KeyMatchReplaceHandler extends MapMatchHandler implements LargeHashCore.ReplaceHandler<LargeHashMap.Entry<K,V>> {
+		protected final K key;
 		protected final V newValue;
-		protected final Object oldValue;
-		MapReplaceOldHandler(Object oldValue, V newValue) {
+		KeyMatchReplaceHandler(K key, V newValue) {
+			super(key);
+			this.key = key;
+			this.newValue = newValue;
+		}
+		@Override
+		public Entry<K,V> replaceWith(LargeHashMap.Entry<K,V> matchingEntry) {
+			return new Entry<K,V>(key, newValue, hashCode);
+		}		
+	}
+
+	private class MapReplaceOldHandler extends MapMatchHandler implements LargeHashCore.ReplaceHandler<LargeHashMap.Entry<K,V>> {
+		protected final K key;
+		protected final V newValue;
+		protected final V oldValue;
+		MapReplaceOldHandler(K key, V oldValue, V newValue) {
+			super(key);
+			this.key = key;
 			this.oldValue = oldValue;
 			this.newValue = newValue;
 		}
 		@Override
 		public LargeHashMap.Entry<K,V> replaceWith(LargeHashMap.Entry<K,V> mappedEntry) {
 			if (mappedEntry.getValue().equals(oldValue)) {
-				return new Entry<K,V>(mappedEntry.getKey(), newValue, ((Entry<K,V>)mappedEntry).getLongHashCode());
+				return new Entry<K,V>(key, newValue, hashCode);
 			} else return null;
-		}
+		}		
 	}
+	
+
 	
 	
 	@Override
-	public boolean replace(Object key, Object oldValue, V newValue) {
+	public V putIfAbsent(final K key, final V value) {
+		if (key == null || value == null) throw new NullPointerException();
+		LargeHashMap.Entry<K, V> result = 
+				hashCore.put(new MapPutHandler(key, value), false);
+		return result != null ? result.getValue() : null ;
+	}
+	
+	@Override
+	public V put(K key, V value) {
+		if (key == null || value == null) throw new NullPointerException();
+		LargeHashMap.Entry<K, V> result = 
+				hashCore.put(new MapPutHandler(key, value), true);
+		return result != null ? result.getValue() : null ;
+	}
+
+	@Override
+	public V remove(Object key) {
+		if (key == null) throw new NullPointerException();
+		LargeHashMap.Entry<K,V> result =  hashCore.remove(new KeyMatchRemoveHandler(key));
+		return result != null ? result.getValue() : null ;
+	}
+	
+
+	@Override
+	public boolean remove(Object key, Object value) {
+		if (key == null || value == null) throw new NullPointerException();
+		LargeHashMap.Entry<K,V> result = hashCore.remove(new ValueMatchRemoveHandler(key, value));
+		return result != null;
+	}
+
+	@Override
+	public V replace(K key, V value) {
+		if (key == null || value == null) throw new NullPointerException();
+		LargeHashMap.Entry<K,V> result = hashCore.replace(new KeyMatchReplaceHandler(key, value));
+		return result != null ? result.getValue() : null;
+	}
+
+	
+	@Override
+	public boolean replace(K key, V oldValue, V newValue) {
 		if (key == null || oldValue == null || newValue == null) throw new NullPointerException();
-		LargeHashMap.Entry<K,V> result = hashCore.replace(key, new MapReplaceOldHandler(oldValue, newValue));
+		LargeHashMap.Entry<K,V> result = hashCore.replace(new MapReplaceOldHandler(key, oldValue, newValue));
 		return result != null;
 	}
 
@@ -234,7 +276,7 @@ public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 
 	@Override
 	public boolean isEmpty() {
-		return hashCore.isEmpty();
+		return hashCore.size() == 0L;
 	}
 
 	@Override
@@ -244,12 +286,12 @@ public class ConcurrentLargeHashMap<K,V> implements LargeHashMap<K, V> {
 
 	@Override
 	public LargeHashMap.Entry<K, V> getEntry(Object key) {
-		return hashCore.get(key);
+		return hashCore.get(new MapMatchHandler(key));
 	}
 	
 	@Override
 	 public LargeHashSet<LargeHashMap.Entry<K,V>> entrySet()  {
-		return hashCore;
+		return null;
 	}
 
 

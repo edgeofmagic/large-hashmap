@@ -11,19 +11,18 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.ReentrantLock;
 
-//import org.logicmill.util.LargeHashCore;
-import org.logicmill.util.LargeHashSet;
+import org.logicmill.util.LargeHashCore;
 import org.logicmill.util.LongHashable;
+import org.logicmill.util.TypeAdapter;
 
 /**
  * @author David Curtis
  *
  * @param <E>
  */
-public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
+public class ConcurrentLargeHashCore<E> implements LargeHashCore<E> {
 
-	
-	private static class DefaultEntryAdapter<E> implements LargeHashSet.EntryAdapter<E> {
+	private static class DefaultEntryAdapter<E> implements TypeAdapter<E> {
 
 		@Override
 		public long getLongHashCode(Object entryKey) {
@@ -35,20 +34,10 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 		}
 
 		@Override
-		public boolean entryMatches(E mappedEntry, Object entryKey) {
+		public boolean matches(Object entryKey, E mappedEntry) {
 			return mappedEntry.equals(entryKey);
 		}
-
 	}
-	
-	abstract static class RemoveHandler<E> {
-		abstract boolean remove(E mappedEntry);
-	}
-	
-	abstract static class ReplaceHandler<E> {
-		abstract E replaceWith(E mappedEntry);
-	}
-
 	
 	/*
 	 * REGARDING SEGMENT STRUCTURE
@@ -147,8 +136,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 		private boolean invalid;
 		
 		private final ReentrantLock lock;
-		
-		
+	
 		/*
 		 * Accumulated concurrency event metrics, for reporting by
 		 * ConcurrentLargeHashMapInspector (the which see for a detailed 
@@ -214,7 +202,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 		 */
 		@SuppressWarnings("unchecked")
 		private Segment[] split() {
-			Segment[] splitPair = new ConcurrentLargeHashSet.Segment[2];
+			Segment[] splitPair = new ConcurrentLargeHashCore.Segment[2];
 			int  newLocalDepth = localDepth + 1;
 			int newSharedBitMask = 1 << localDepth;
 			splitPair[0] = new Segment(newLocalDepth, sharedBits);
@@ -446,11 +434,10 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 				 */
 				offsets.set(prevIndex, entryOffset);
 			}				
-		
 		}
 		
-		private E replace(Object entryKey, long hashCode, ReplaceHandler<E> handler) {
-			int bucketIndex = bucketIndex(hashCode);
+		private E replace(ReplaceHandler<E> handler) {
+			int bucketIndex = bucketIndex(handler.getLongHashCode());
 			/*
 			 * Search for entry with key
 			 */
@@ -458,7 +445,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 			while (nextOffset != NULL_OFFSET) {
 				int entryIndex = wrapIndex(bucketIndex + nextOffset);
 				E mappedEntry = entries.get(entryIndex);
-				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.entryMatches(mappedEntry,entryKey)) {		
+				if (handler.match(mappedEntry)) {
 					E newEntry = handler.replaceWith(mappedEntry);
 					if (newEntry == null) {
 						return null;
@@ -474,69 +461,15 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 			 */
 			return null;	
 		}
-	
-		
-		/*
-		 * Implements replace(Object key, V value) and replace (Object key, V oldValue, V newValue).
-		 * If oldValue is null, treat it as replace(key, value), otherwise, only replace
-		 * if existing entry value equals oldValue.
-		 */
-		private E replace(Object entryKey, long hashCode, E newEntry) {
-			int bucketIndex = bucketIndex(hashCode);
-			/*
-			 * Search for entry with key
-			 */
-			int nextOffset = buckets.get(bucketIndex);
-			while (nextOffset != NULL_OFFSET) {
-				int entryIndex = wrapIndex(bucketIndex + nextOffset);
-				E mappedEntry = entries.get(entryIndex);
-				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.entryMatches(mappedEntry,entryKey)) {
-					entries.set(entryIndex, newEntry);
-					return mappedEntry;						
-				}
-				nextOffset = offsets.get(entryIndex);
-			}
-			/*
-			 *  Not found
-			 */
-			return null;	
-		}
-		
-		private E replace(Object entryKey, long hashCode, Object oldEntry, E newEntry) {
-			int bucketIndex  = bucketIndex(hashCode);
-			int nextOffset = buckets.get(bucketIndex);
-			while (nextOffset != NULL_OFFSET) {
-				int entryIndex = wrapIndex(bucketIndex + nextOffset);
-				E mappedEntry = entries.get(entryIndex);
-				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.entryMatches(mappedEntry, entryKey)) {
-					if (oldEntry != null) {
-						if (mappedEntry == oldEntry) {
-							entries.set(entryIndex, newEntry);
-							return mappedEntry;							
-						}
-						if (mappedEntry.equals(oldEntry)) {
-							entries.set(entryIndex, newEntry);
-							return mappedEntry;
-						}
-						return null;
-					} else {
-						entries.set(entryIndex, newEntry);
-						return mappedEntry;
-					}
-				}
-				nextOffset = offsets.get(entryIndex);
-			}
-			return null;
-		}
 			
 		/*
 		 * Implements put() and putIfAbsent() on the appropriate segment. The
 		 * segment has already been locked by the thread on entry.
 		 */
-		private E put(E newEntry, long hashCode, boolean replaceIfPresent) 
+		private E put(LargeHashCore.PutHandler<E> handler, boolean replaceIfPresent) 
 		throws SegmentOverflowException {
 			// assert sharedBits(hashValue) == sharedBits;
-			int bucketIndex = bucketIndex(hashCode);
+			int bucketIndex = bucketIndex(handler.getLongHashCode());
 			/*
 			 * Search for entry with key
 			 */
@@ -544,9 +477,9 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 			while (nextOffset != NULL_OFFSET) {
 				int entryIndex = wrapIndex(bucketIndex + nextOffset);
 				E mappedEntry = entries.get(entryIndex);
-				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode  && entryAdapter.entryMatches(mappedEntry, newEntry)) {
+				if (handler.match(mappedEntry)) {
 					if (replaceIfPresent) {
-						entries.set(entryIndex, newEntry);
+						entries.set(entryIndex, handler.getNewEntry());
 					}
 					return mappedEntry;						
 				}
@@ -555,12 +488,104 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 			/*
 			 *  Not found, insert the new entry.
 			 */
-			placeWithinHopRange(bucketIndex, newEntry);
+			placeWithinHopRange(bucketIndex, handler.getNewEntry());
 			entryCount++;
 			mapEntryCount.incrementAndGet();
 			return null;
 		}
 	
+		private E putIfAbsent(PutHandler<E> handler) throws SegmentOverflowException {
+			// assert sharedBits(hashValue) == sharedBits;
+			int bucketIndex = bucketIndex(handler.getLongHashCode());
+			/*
+			 * Search for entry with key
+			 */
+			int nextOffset = buckets.get(bucketIndex);
+			while (nextOffset != NULL_OFFSET) {
+				int entryIndex = wrapIndex(bucketIndex + nextOffset);
+				E mappedEntry = entries.get(entryIndex);
+				if (handler.match(mappedEntry)) {
+					return mappedEntry;						
+				} 
+				nextOffset = offsets.get(entryIndex);
+			}
+			/*
+			 *  Not found, insert the new entry.
+			 */
+			E newEntry = handler.getNewEntry();
+			placeWithinHopRange(bucketIndex, newEntry);
+			entryCount++;
+			mapEntryCount.incrementAndGet();
+			return null;
+			
+		}
+	
+		private E get(LargeHashCore.MatchHandler<E> handler) {
+			int localRetrys = 0;
+			// assert sharedBits(hashValue) == sharedBits;
+			long hashCode = handler.getLongHashCode();
+			int bucketIndex = bucketIndex(hashCode);
+			int oldTimeStamp, newTimeStamp = 0;
+			try {
+				retry:
+				do {
+					oldTimeStamp = timeStamps.get(bucketIndex);
+					int nextOffset = buckets.get(bucketIndex);
+					while (nextOffset != NULL_OFFSET) {
+						int nextIndex = wrapIndex(bucketIndex + nextOffset);
+						E mappedEntry = entries.get(nextIndex);
+						if (mappedEntry == null) {
+							/*
+							 * Concurrent update, re-try.
+							 */
+							localRetrys++;
+							continue retry;
+						}
+						long entryHashCode = entryAdapter.getLongHashCode(mappedEntry);
+						if (bucketIndex(entryHashCode) != bucketIndex) {
+							/*
+							 * Concurrent update, re-try.
+							 */
+							localRetrys++;
+							continue retry;
+						}
+						if (handler.match(mappedEntry)) {
+							return mappedEntry;
+						}
+						nextOffset = offsets.get(nextIndex);
+					}
+					/*
+					 * The key wasn't found. Re-try if the time stamps
+					 * didn't match.
+					 */
+					newTimeStamp = timeStamps.get(bucketIndex);
+					if (newTimeStamp != oldTimeStamp) {
+						localRetrys++;
+						continue retry;
+					} else {
+						return null;
+					}
+				} while (true);
+			} 
+			/*
+			 * Register the re-try attempts with the accumulated metrics.
+			 */
+			finally {
+				if (GATHER_EVENT_DATA) {
+					if (localRetrys > 0) {
+						int maxRetrys = maxReadRetrys.get();
+						while (localRetrys > maxRetrys) {
+							if (maxReadRetrys.compareAndSet(maxRetrys, localRetrys)) {
+								break;
+							}
+							maxRetrys = maxReadRetrys.get();
+						}
+						readRetrys.addAndGet(localRetrys);
+					}
+				}
+			}
+			
+		}
 		
 		private E get(Object entryKey, long hashCode) {
 			/*
@@ -580,7 +605,6 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 					while (nextOffset != NULL_OFFSET) {
 						int nextIndex = wrapIndex(bucketIndex + nextOffset);
 						E mappedEntry = entries.get(nextIndex);
-						long entryHashCode = entryAdapter.getLongHashCode(mappedEntry);
 						if (mappedEntry == null) {
 							/*
 							 * Concurrent update, re-try.
@@ -588,6 +612,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 							localRetrys++;
 							continue retry;
 						}
+						long entryHashCode = entryAdapter.getLongHashCode(mappedEntry);
 						if (bucketIndex(entryHashCode) != bucketIndex) {
 							/*
 							 * Concurrent update, re-try.
@@ -595,7 +620,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 							localRetrys++;
 							continue retry;
 						}
-						if (entryHashCode == hashCode && entryAdapter.entryMatches(mappedEntry, entryKey)) {
+						if (entryHashCode == hashCode && entryAdapter.matches(entryKey, mappedEntry)) {
 							return mappedEntry;
 						}
 						nextOffset = offsets.get(nextIndex);
@@ -669,14 +694,9 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 			return 0;
 		}
 
-		
-		
-		/*
-		 * Public remove() delegates to this method on the appropriate segment.
-		 * The segment has already been locked by the calling thread. 
-		 */
-		private E remove(Object entryKey, long hashCode, RemoveHandler<E> handler) {
-			int bucketIndex = bucketIndex(hashCode);			
+	
+		private E remove(RemoveHandler<E> handler) {
+			int bucketIndex = bucketIndex(handler.getLongHashCode());			
 			int nextOffset = buckets.get(bucketIndex);
 			if (nextOffset == NULL_OFFSET) {
 				return null;
@@ -688,11 +708,11 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 			int nextIndex = wrapIndex(bucketIndex + nextOffset);
 			E mappedEntry = entries.get(nextIndex);
 			// assert entry != null;
-			if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.entryMatches(mappedEntry, entryKey)) {
+			if (handler.match(mappedEntry)) {
 				/*
 				 * First entry in the bucket was the key to be removed.
 				 */
-				if (handler != null && !handler.remove(mappedEntry)) {
+				if (!handler.remove(mappedEntry)) {
 					return null;
 				}
 				/*
@@ -728,8 +748,8 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 				nextIndex = wrapIndex(bucketIndex + nextOffset);
 				nextOffset = offsets.get(nextIndex);
 				mappedEntry = entries.get(nextIndex);
-				if (entryAdapter.getLongHashCode(mappedEntry) == hashCode && entryAdapter.entryMatches(mappedEntry, entryKey)) {					
-					if (handler != null && !handler.remove(mappedEntry)) {
+				if (handler.match(mappedEntry)) {
+					if (!handler.remove(mappedEntry)) {
 						return null;
 					}
 
@@ -751,7 +771,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 			 */
 			return null;
 		}
-		
+	
 		/*
 		 * Invoked by iteratorInternals; builds a list containing all of the 
 		 * entries in the bucket. Returns null if the bucket is empty. The 
@@ -911,7 +931,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 		return i;
 	}
 
-	private final LargeHashSet.EntryAdapter<E> entryAdapter;
+	private final TypeAdapter<E> entryAdapter;
 	
 	/**
 	 * @param segSize
@@ -919,7 +939,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 	 * @param loadThreshold
 	 * @param entryAdapter
 	 */
-	public ConcurrentLargeHashSet(int segSize, int initSegCount, float loadThreshold, EntryAdapter<E> entryAdapter) {
+	public ConcurrentLargeHashCore(int segSize, int initSegCount, float loadThreshold, TypeAdapter<E> entryAdapter) {
 					
 		segSize = nextPowerOfTwo(segSize);		
 		initSegCount = nextPowerOfTwo(initSegCount);
@@ -973,12 +993,13 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 	 * @param initSegCount
 	 * @param loadThreshold
 	 */
-	public ConcurrentLargeHashSet(int segSize, int initSegCount, float loadThreshold) {
+	public ConcurrentLargeHashCore(int segSize, int initSegCount, float loadThreshold) {
 		this(segSize, initSegCount, loadThreshold, new DefaultEntryAdapter<E>());
 	}
 
-	E replace(Object entryKey, ReplaceHandler<E> handler) {
-		long hashCode = entryAdapter.getLongHashCode(entryKey);
+	@Override
+	public E replace(ReplaceHandler<E> handler) {
+		long hashCode = handler.getLongHashCode();
 		while (true) {
 			AtomicReferenceArray<Segment> dir = directory.get();
 			long dirMask = dir.length() - 1;
@@ -987,7 +1008,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 			seg.lock.lock();
 			try {
 				if (!seg.invalid) {
-					return seg.replace(entryKey, hashCode, handler);	
+					return seg.replace(handler);	
 				}
 			}
 			finally {
@@ -997,110 +1018,9 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 		
 	}
 	
-
-	public E replace(Object entryKey, E newEntry) {
-		if (entryKey == null || newEntry == null) {
-			throw new NullPointerException();
-		}		
-		long hashCode = entryAdapter.getLongHashCode(entryKey);
-		while (true) {
-			AtomicReferenceArray<Segment> dir = directory.get();
-			long dirMask = dir.length() - 1;
-			int segmentIndex = (int)(hashCode & (long)dirMask);
-			Segment seg = dir.get(segmentIndex);
-			seg.lock.lock();
-			try {
-				if (!seg.invalid) {
-					return seg.replace(entryKey, hashCode, newEntry);	
-				}
-			}
-			finally {
-				seg.lock.unlock();
-			}
-		}
-		
-	}
-	
-	public E replace(Object entryKey, Object oldEntry, E newEntry) {
-		if (entryKey == null || oldEntry == null || newEntry == null) {
-			throw new NullPointerException();
-		}
-		long hashCode = entryAdapter.getLongHashCode(entryKey);
-		return replace(entryKey, hashCode, oldEntry, newEntry);
-	}
-	
-	private E replace(Object entryKey, long hashCode, Object oldEntry, E newEntry) {
-		while (true) {
-			AtomicReferenceArray<Segment> dir = directory.get();
-			long dirMask = dir.length() - 1;
-			int segmentIndex = (int)(hashCode & (long)dirMask);
-			Segment seg = dir.get(segmentIndex);
-			seg.lock.lock();
-			try {
-				if (!seg.invalid) {
-					return seg.replace(entryKey, hashCode, oldEntry, newEntry);	
-				}
-			}
-			finally {
-				seg.lock.unlock();
-			}
-		}
-
-	}
-
-
-
-	/*
-
 	@Override
-	public E replace(Object entryKey, E newEntry) {
-		if (entryKey == null || newEntry == null) {
-			throw new NullPointerException();
-		}
-		long hashCode = entryAdapter.getLongHashCode(entryKey);
-		return replace(entryKey, hashCode, null, newEntry);
-	}
-
-	@Override
-	public E replace(Object entryKey, Object oldEntry, E newEntry) {
-		if (entryKey == null || oldEntry == null || newEntry == null) {
-			throw new NullPointerException();
-		}
-		long hashCode = entryAdapter.getLongHashCode(entryKey);
-		return replace(entryKey, hashCode, oldEntry, newEntry);
-	}
-	
-	private E replace(Object entryKey, long hashCode, Object oldEntry, E newEntry) {
-		while (true) {
-			AtomicReferenceArray<Segment> dir = directory.get();
-			long dirMask = dir.length() - 1;
-			int segmentIndex = (int)(hashCode & (long)dirMask);
-			Segment seg = dir.get(segmentIndex);
-			seg.lock.lock();
-			try {
-				if (!seg.invalid) {
-					return seg.replace(entryKey, hashCode, oldEntry, newEntry);	
-				}
-			}
-			finally {
-				seg.lock.unlock();
-			}
-		}
-
-	}
-	*/
-
-	@Override
-	public E remove(Object entryKey) {
-		return remove(entryKey, null);
-	}
-	
-
-	E remove(Object entryKey, RemoveHandler<E> handler) {
-		if (entryKey == null) {
-			throw new NullPointerException();
-		}
-		long hashCode = entryAdapter.getLongHashCode(entryKey);
+	public E remove(RemoveHandler<E> handler) {
+		long hashCode = handler.getLongHashCode();
 		while (true) {
 			AtomicReferenceArray<Segment> dir = directory.get();
 			int dirSize = dir.length();
@@ -1110,7 +1030,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 			seg.lock.lock();
 			try {
 				if (!seg.invalid) {
-					return seg.remove(entryKey, hashCode, handler);	
+					return seg.remove(handler);	
 				}
 			}
 			finally {
@@ -1119,34 +1039,14 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 		}
 	}
 	
-	
 	@Override
-	public boolean add(E entry) {
-		return putIfAbsent(entry) == null;
-	}
-		
-	public E put(E entry) {
-		if (entry == null) {
-			throw new NullPointerException();
-		}
-		return put(entry, true);
-	}
-	
-	public E putIfAbsent(E entry) {
-		if (entry == null) {
-			throw new NullPointerException();
-		}
-		return put(entry, false);
-	}
-	
-	
-	E put(E entry, boolean replaceIfPresent) {
+	public E put(LargeHashCore.PutHandler<E> handler, boolean replaceIfPresent) {
 		retry:
 		while (true) {
 			AtomicReferenceArray<Segment> dir = directory.get();
 			int dirSize = dir.length();
 			long dirMask = dirSize - 1;
-			long hashCode = entryAdapter.getLongHashCode(entry);
+			long hashCode = handler.getLongHashCode();
 			int segmentIndex = (int)(hashCode & (long)dirMask);
 			Segment seg = dir.get(segmentIndex);
 			seg.lock.lock();
@@ -1160,7 +1060,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 				 */
 				if (seg.entryCount < loadThresholdLimit) {
 					try {
-						return seg.put(entry, hashCode, replaceIfPresent);
+						return seg.put(handler, replaceIfPresent);
 					} catch (SegmentOverflowException soe) {
 						if (GATHER_EVENT_DATA) {
 							forcedSplitCount.incrementAndGet();
@@ -1183,9 +1083,9 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 				E result;
 				try {
 					if (split[0].sharedBitsMatchSegment(hashCode)) {
-						result = split[0].put(entry, hashCode, replaceIfPresent);
+						result = split[0].put(handler, replaceIfPresent);
 					} else if (split[1].sharedBitsMatchSegment(hashCode)) {
-						result = split[1].put(entry, hashCode, replaceIfPresent);
+						result = split[1].put(handler, replaceIfPresent);
 					} else {
 						throw new IllegalStateException("sharedBits conflict during segment split");
 					}
@@ -1200,6 +1100,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 				seg.lock.unlock();
 			}
 		}
+		
 	}
 	
 	private void updateDirectoryOnSplit(Segment[] split) {
@@ -1247,16 +1148,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 
 	}
 
-
-	@Override
-	public boolean contains(Object entryKey) {
-		if (entryKey == null) {
-			throw new NullPointerException();
-		}
-		return get(entryKey) != null;
-	}
-	
-	@Override
+/*	@Override
 	public E get(Object entryKey) {
 		if (entryKey == null) {
 			throw new NullPointerException();
@@ -1267,11 +1159,15 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 		Segment seg = dir.get((int)(hashCode & dirMask));
 		return seg.get(entryKey, hashCode);
 	}
-
-
+*/	
 	@Override
-	public boolean isEmpty() {
-		return mapEntryCount.get() == 0L;
+	public E get(LargeHashCore.MatchHandler<E> handler) {
+		AtomicReferenceArray<Segment> dir = directory.get();
+		long dirMask = (long)(dir.length() - 1);
+		long hashCode = handler.getLongHashCode();
+		Segment seg = dir.get((int)(hashCode & dirMask));
+		return seg.get(handler);
+		
 	}
 
 
@@ -1317,7 +1213,7 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 		BitSet markedSegments;
 
 		private SegmentIterator() {
-			dir = ConcurrentLargeHashSet.this.directory.get();
+			dir = ConcurrentLargeHashCore.this.directory.get();
 			dirSize = dir.length();
 			markedSegments = new BitSet(dirSize);
 			nextSegmentIndex = 0;
@@ -1437,7 +1333,6 @@ public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 		public void remove() {
 			throw new UnsupportedOperationException();
 		}		
-
 	}
 
 }

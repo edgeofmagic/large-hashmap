@@ -62,6 +62,6 @@ public interface LongHashable {
 	/** Returns a 64-bit hash code value for the object. 
 	 * @return a 64-bit hash code value for the object.
 	 */
-	public long getLongHashCode();
+	long getLongHashCode();
 
 }
