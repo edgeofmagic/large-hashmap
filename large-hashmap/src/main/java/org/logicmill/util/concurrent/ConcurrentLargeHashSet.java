@@ -8,7 +8,7 @@ import org.logicmill.util.TypeAdapter;
 import org.logicmill.util.LongHashable;
 import org.logicmill.util.LargeHashCore.PutHandler;
 
-public class ConcurrentLargeHashCoreSet<E> implements LargeHashSet<E> {
+public class ConcurrentLargeHashSet<E> implements LargeHashSet<E> {
 
 	private final LargeHashCore<E> hashCore;
 	private final TypeAdapter<E> typeAdapter; // only used locally for hashCode, should work for key or map adapter
@@ -37,7 +37,7 @@ public class ConcurrentLargeHashCoreSet<E> implements LargeHashSet<E> {
 	 * @param loadFactorThreshold
 	 * @param keyAdapter
 	 */
-	public ConcurrentLargeHashCoreSet(int segSize, int initSegCount,
+	public ConcurrentLargeHashSet(int segSize, int initSegCount,
 			float loadFactorThreshold, TypeAdapter<E> adapter) {
 		hashCore = new ConcurrentLargeHashCore<E>(
 				segSize, initSegCount, loadFactorThreshold, adapter);
@@ -49,7 +49,7 @@ public class ConcurrentLargeHashCoreSet<E> implements LargeHashSet<E> {
 	 * @param initSegCount
 	 * @param loadFactorThreshold
 	 */
-	public ConcurrentLargeHashCoreSet(int segSize, int initSegCount, float loadFactorThreshold) {
+	public ConcurrentLargeHashSet(int segSize, int initSegCount, float loadFactorThreshold) {
 		this(segSize, initSegCount, loadFactorThreshold, new DefaultTypeAdapter());
 		
 	}
