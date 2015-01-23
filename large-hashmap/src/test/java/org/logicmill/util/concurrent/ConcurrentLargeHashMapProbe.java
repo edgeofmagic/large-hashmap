@@ -17,13 +17,14 @@ package org.logicmill.util.concurrent;
 
 import java.util.BitSet;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.logicmill.util.LargeHashMap;
+// import org.logicmill.util.LargeHashMap;
 
 /** A reflection-based test probe for accessing the internal data structures 
  * of an instance of ConcurrentHashMap. The bulk of the workload is delegated
@@ -67,13 +68,13 @@ public class ConcurrentLargeHashMapProbe {
 		private final Object segment;
 		private final AtomicIntegerArray buckets;
 		private final AtomicIntegerArray offsets;
-		private final AtomicReferenceArray<LargeHashMap.Entry<?,?>> entries;
+		private final AtomicReferenceArray<Map.Entry<?,?>> entries;
 		private final AtomicIntegerArray timeStamps;
 		private final int indexMask;
 		private final int localDepth;
 		private final int sharedBits;
 		private final int serialID;
-		private final long sharedBitsMask;
+		private final int sharedBitsMask;
 		private final ReentrantLock segmentLock;
 		
 		@SuppressWarnings("unchecked")
@@ -89,7 +90,7 @@ public class ConcurrentLargeHashMapProbe {
 				localDepth = ReflectionProbe.getIntField(segment, "localDepth");
 				sharedBits = ReflectionProbe.getIntField(segment, "sharedBits");
 				serialID = ReflectionProbe.getIntField(segment, "serialID");
-				sharedBitsMask = ReflectionProbe.getLongField(segment, "sharedBitsMask");
+				sharedBitsMask = ReflectionProbe.getIntField(segment, "sharedBitsMask");
 				segmentLock = (ReentrantLock)ReflectionProbe.getObjectField(segment, "lock");
 			} catch (Exception e) {
 				throw new ProbeInternalException(e);
@@ -166,7 +167,7 @@ public class ConcurrentLargeHashMapProbe {
 		/** Returns the {@code entries} array for the segment.
 		 * @return reference to the segment's {@code entries} array
 		 */
-		public AtomicReferenceArray<LargeHashMap.Entry<?,?>> getEntries() {
+		public AtomicReferenceArray<Map.Entry<?,?>> getEntries() {
 			return entries;
 		}
 		
@@ -189,7 +190,7 @@ public class ConcurrentLargeHashMapProbe {
 		 * for all entries in the segment. These bits are discarded when
 		 * deriving a bucket index from a hash code value. 
 		 * Specifically,<pre><code>
-		 * int bucketIndex(long hashCode) { return (hashCode >>> localDepth) & indexMask; }
+		 * int bucketIndex(int hashCode) { return (hashCode >>> localDepth) & indexMask; }
 		 * </code></pre>
 		 * @return the local depth of the segment
 		 * @see #getIndexMask()
@@ -222,7 +223,7 @@ public class ConcurrentLargeHashMapProbe {
 		
 		/** Returns a mask corresponding the bits in a hash code that contain
 		 * the shared bit pattern for the segment. Specifically,<pre><code>
-		 * 	long sharedBitsMask = (1L << localDepth) - 1;
+		 * 	int sharedBitsMask = (1L << localDepth) - 1;
 		 * </code></pre>and for all entries in the segment,<pre><code>
 		 * 	(entry.getHashCode() & getSharedBitsMask()) == getSharedBits()
 		 * </code></pre>
@@ -230,7 +231,7 @@ public class ConcurrentLargeHashMapProbe {
 		 * @see #getSharedBitsMask()
 		 * @see #getLocalDepth()
 		 */
-		public long getSharedBitsMask() {
+		public int getSharedBitsMask() {
 			return sharedBitsMask;
 		}
 		
@@ -277,8 +278,8 @@ public class ConcurrentLargeHashMapProbe {
 		 * @return the index of bucket (in the {@code buckets} array 
 		 * corresponding to {@code hashCode}
 		 */
-		public int bucketIndex(long hashCode) {
-			return (int) ((hashCode >>> localDepth) & indexMask);
+		public int bucketIndex(int hashCode) {
+			return  (hashCode >>> localDepth) & indexMask;
 		}
 		
 		/** Returns true if the bucket at {@code bucketIndex} is empty, that 
@@ -293,16 +294,16 @@ public class ConcurrentLargeHashMapProbe {
 		
 		@SuppressWarnings("rawtypes")
 		int getBucketIndexForEntryAt(int entryIndex) {
-			return bucketIndex(getEntryHashCode((LargeHashMap.Entry)entries.get(entryIndex)));
+			return bucketIndex(getEntryHashCode((Map.Entry)entries.get(entryIndex)));
 		}
 		
 		/** Returns the hash code for the specified entry.
 		 * @param entry entry of which the hash code is returned
 		 * @return hash code for {@code entry}
 		 */
-		public long getEntryHashCode(LargeHashMap.Entry<?,?> entry) {
+		public int getEntryHashCode(Map.Entry<?,?> entry) {
 			try {
-				return ReflectionProbe.getLongField(entry, "hashCode");
+				return ReflectionProbe.getIntField(entry, "keyHashCode");
 			} catch (SecurityException e) {
 				throw new ProbeInternalException(e);
 			} catch (IllegalArgumentException e) {
@@ -326,8 +327,8 @@ public class ConcurrentLargeHashMapProbe {
 		 * offset of the entry from the bucket index. Specifically, if
 		 * {@code ((result & (1 << n)) != 0)} then {@code buckets[bucketIndex]}
 		 * contains an entry at offset {@code n}. Valid bits are 
-		 * <code>2<sup>n</sup></code> where for {@code n} in {@code (1 .. 
-		 * HOP_RANGE)}. HOP_RANGE cannot exceed 64 without re-designing this
+		 * <code>2<sup>n</sup></code> where for {@code n} in {@code (0 .. 
+		 * HOP_RANGE - 1)}. HOP_RANGE cannot exceed 64 without re-designing this
 		 * method, but that seems unlikely.
 		 * @param bucketIndex index of the bucket whose map is returned
 		 * @return the bitwise map of entries in the specified bucket
@@ -347,7 +348,7 @@ public class ConcurrentLargeHashMapProbe {
 				while (nextOffset != NULL_OFFSET) {
 					int nextIndex = wrapIndex(bucketIndex + nextOffset);
 					@SuppressWarnings("rawtypes")
-					LargeHashMap.Entry entry = (LargeHashMap.Entry)entries.get(nextIndex);
+					Map.Entry entry = (Map.Entry)entries.get(nextIndex);
 					if (entry == null) {
 						/*
 						 * Concurrent update; try again.
@@ -379,10 +380,10 @@ public class ConcurrentLargeHashMapProbe {
 		 * @param entry entry whose presence in the bucket is to be tested
 		 * @return true if the specified entry is in the specified bucket
 		 */
-		public boolean bucketContainsEntry(int bucketIndex, LargeHashMap.Entry<?,?> entry) {
+		public boolean bucketContainsEntry(int bucketIndex, Map.Entry<?,?> entry) {
 			int offset = buckets.get(bucketIndex);
 			while (offset != NULL_OFFSET) {
-				LargeHashMap.Entry<?,?> bucketEntry = (LargeHashMap.Entry<?,?>)entries.get(wrapIndex(bucketIndex+offset));
+				Map.Entry<?,?> bucketEntry = (Map.Entry<?,?>)entries.get(wrapIndex(bucketIndex+offset));
 				if (entry == bucketEntry) {
 					return true;
 				}

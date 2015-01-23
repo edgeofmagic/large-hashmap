@@ -14,13 +14,13 @@ package org.logicmill.util.concurrent;
  * @author David Curtis
  *
  */
-public interface KeySource {
+public interface KeySource<T> {
 
 	/**
 	 * Returns the next available key. If no key is available, returns null.
 	 * @return next available key, or null if none is available
 	 */
-	public byte[] getKey();
+	public T getKey();
 	
 	/**
 	 * Deposits the next available key into the provided buffer. 
@@ -30,7 +30,7 @@ public interface KeySource {
 	 * @param buf on exit, contains the key
 	 * @return the size of the key, or -1 if no key is available
 	 */
-	public int getKey(byte[] buf);
+//	public int getKey(byte[] buf);
 	
 	/** 
 	 * Returns true if more keys are available from this source. 

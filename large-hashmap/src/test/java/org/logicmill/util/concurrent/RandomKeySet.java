@@ -8,7 +8,7 @@ package org.logicmill.util.concurrent;
  * @see RandomKeyStream
  *
  */
-public class RandomKeySet extends KeySet {
+public class RandomKeySet extends KeySet<ByteArrayKey> {
 
 	private final int keySize;
 	/**
@@ -19,7 +19,7 @@ public class RandomKeySet extends KeySet {
 	 */
 	public RandomKeySet(int count, int keySize, long seed) {
 		this.keySize = keySize;
-		keys = new byte[count][];
+		keys = new ByteArrayKey[count];
 		keyCount = count;
 		RandomKeyStream rkg = new RandomKeyStream(keySize, seed, count);
 		int iKey = 0;

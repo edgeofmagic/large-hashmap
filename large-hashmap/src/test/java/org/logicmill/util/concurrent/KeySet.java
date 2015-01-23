@@ -16,7 +16,7 @@ import org.apache.commons.math3.random.BitsStreamGenerator;
  * @author David Curtis
  *
  */
-public abstract class KeySet implements KeySource {
+public abstract class KeySet<T> implements KeySource<T> {
 	
 	
 	/**
@@ -28,7 +28,7 @@ public abstract class KeySet implements KeySource {
 	/**
 	 * Array containing keys.
 	 */
-	protected byte[][] keys;
+	protected T[] keys;
 	
 	/**
 	 * Index of the key that will be returned the next time
@@ -71,7 +71,7 @@ public abstract class KeySet implements KeySource {
 	 * @throws IllegalStateException if the set has not been initialized
 	 */
 	@Override
-	public byte[] getKey() {
+	public T getKey() {
 		if (iNextKey >= keyCount) {
 			return null;
 		} else {
@@ -79,7 +79,7 @@ public abstract class KeySet implements KeySource {
 		}			
 	}
 	
-	private int copyToBuf(byte[] key, byte[] buf) {
+/*	private int copyToBuf(ByteArrayKey key, byte[] buf) {
 		int nBytes = key.length;
 		if (buf.length < key.length) {
 			nBytes = buf.length;
@@ -89,7 +89,7 @@ public abstract class KeySet implements KeySource {
 		}
 		return nBytes;
 	}
-	
+*/	
 	/** 
 	 * Added for completeness; using this method would be 
 	 * counter-productive in contexts that require low-overhead
@@ -97,7 +97,7 @@ public abstract class KeySet implements KeySource {
 	 * @see org.logicmill.util.concurrent#getKey(byte[])
 	 * 
 	 */
-	@Override
+/*	@Override
 	public int getKey(byte[] buf) {
 		if (iNextKey >= keyCount) {
 			return -1;
@@ -106,14 +106,14 @@ public abstract class KeySet implements KeySource {
 		}			
 		
 	}
-	
+*/	
 	/** Returns the <code>i<sup>th</sup></code> element in the internal key array.
 	 * @param i index of the key to be returned
 	 * @return the specified key
 	 * @throws ArrayIndexOutOfBoundsException if {@code i < 0} or {@code i >=} 
 	 * number of keys in this set
 	 */
-	public byte[] getKey(int i) {
+	public T getKey(int i) {
 		if (i < 0 || i >= keyCount) {
 			throw new ArrayIndexOutOfBoundsException();
 		}
@@ -149,7 +149,7 @@ public abstract class KeySet implements KeySource {
 		for (int i = keyCount - 1; i > 0; i--) {
 			int iRnd = rng.nextInt(i+1);
 			if (iRnd != i) {
-				byte[] tmp = keys[i];
+				T tmp = keys[i];
 				keys[i] = keys[iRnd];
 				keys[iRnd] = tmp;
 			}

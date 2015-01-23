@@ -10,7 +10,7 @@ import org.apache.commons.math3.random.ISAACRandom;
  * @author David Curtis
  *
  */
-public class RandomKeyStream implements KeySource {
+public class RandomKeyStream implements KeySource<ByteArrayKey> {
 	
 	private final long seed;
 	private final ISAACRandom rng;
@@ -42,12 +42,12 @@ public class RandomKeyStream implements KeySource {
 	 * @see org.logicmill.hash.test.KeySource#getKey()
 	 */
 	@Override
-	public byte[] getKey() {
+	public ByteArrayKey getKey() {
 		if (hasMoreKeys()) {
 			byte[] buf = new byte[keySize];
 			rng.nextBytes(buf);
 			keyCount++;
-			return buf;
+			return new ByteArrayKey(buf);
 		} else {
 			return null;
 		}
@@ -79,12 +79,12 @@ public class RandomKeyStream implements KeySource {
 	 * <code>keySize</code>.
 	 * @see org.logicmill.hash.test.KeySource#getKey(byte[])
 	 */
-	@Override
+/*	@Override
 	public int getKey(byte[] buf) {
 		rng.nextBytes(buf);
 		return buf.length;
 	}
-
+*/
 	/**
 	 * Returns the value specified in the <code>keySize</code> parameter
 	 * for the constructor {@link #RandomKeyStream(int, long, int)}.

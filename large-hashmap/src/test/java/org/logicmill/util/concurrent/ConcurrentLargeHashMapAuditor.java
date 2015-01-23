@@ -17,10 +17,12 @@ package org.logicmill.util.concurrent;
 
 import java.util.Iterator;
 import java.util.LinkedList;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
-import org.logicmill.util.LargeHashMap;
+
+// import org.logicmill.util.LargeHashMap;
 import org.logicmill.util.concurrent.ConcurrentHashMap;
 import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.ProbeInternalException;
 import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
@@ -108,8 +110,8 @@ public class ConcurrentLargeHashMapAuditor {
 			return unwrappedIndex & segmentProbe.getIndexMask();
 		}
 		
-		private int bucketIndex(long hashCode) {
-			return (int) ((hashCode >>> segmentProbe.getLocalDepth()) & segmentProbe.getIndexMask());
+		private int bucketIndex(int hashCode) {
+			return  (hashCode >>> segmentProbe.getLocalDepth()) & segmentProbe.getIndexMask();
 		}
 		
 		boolean isBucketEmpty(int bucketIndex) {
@@ -117,10 +119,10 @@ public class ConcurrentLargeHashMapAuditor {
 		}
 				
 		@SuppressWarnings("rawtypes")
-		private boolean bucketContainsEntry(int bucketIndex, LargeHashMap.Entry entry) {
+		private boolean bucketContainsEntry(int bucketIndex, Map.Entry entry) {
 			int offset = segmentProbe.getBuckets().get(bucketIndex);
 			while (offset != NULL_OFFSET) {
-				LargeHashMap.Entry bucketEntry = (LargeHashMap.Entry)segmentProbe.getEntries().get(wrapIndex(bucketIndex+offset));
+				Map.Entry bucketEntry = (Map.Entry)segmentProbe.getEntries().get(wrapIndex(bucketIndex+offset));
 				if (entry == bucketEntry) {
 					return true;
 				}
@@ -143,7 +145,7 @@ public class ConcurrentLargeHashMapAuditor {
 			try {
 				AtomicIntegerArray buckets = segmentProbe.getBuckets();
 				AtomicIntegerArray offsets = segmentProbe.getOffsets();
-				AtomicReferenceArray<LargeHashMap.Entry<?,?>> entries = (AtomicReferenceArray<LargeHashMap.Entry<?,?>>)segmentProbe.getEntries();
+				AtomicReferenceArray<Map.Entry<?,?>> entries = (AtomicReferenceArray<Map.Entry<?,?>>)segmentProbe.getEntries();
 				nextBucket:
 				for (int bucketIndex = 0; bucketIndex < buckets.length(); bucketIndex++) {
 					if (!isBucketEmpty(bucketIndex)) {
@@ -156,7 +158,7 @@ public class ConcurrentLargeHashMapAuditor {
 						while (offset != NULL_OFFSET) {
 							bucketEntryCount++;
 							@SuppressWarnings("rawtypes")
-							LargeHashMap.Entry entry = entries.get(wrapIndex(bucketIndex + offset));
+							Map.Entry entry = entries.get(wrapIndex(bucketIndex + offset));
 							if (entry == null) {
 								exceptions.noteException(new NullEntryInBucketException(segmentProbe, bucketIndex, offset));
 							} else {
@@ -190,7 +192,7 @@ public class ConcurrentLargeHashMapAuditor {
 				int nonNullEntryCount = 0;			
 				for (int i = 0; i < entries.length(); i++) {
 					@SuppressWarnings("rawtypes")
-					LargeHashMap.Entry entry = entries.get(i);
+					Map.Entry entry = entries.get(i);
 					if (entry != null) {
 						int entryBucketIndex = bucketIndex(segmentProbe.getEntryHashCode(entry));
 						if (!bucketContainsEntry(entryBucketIndex, entry)) {
