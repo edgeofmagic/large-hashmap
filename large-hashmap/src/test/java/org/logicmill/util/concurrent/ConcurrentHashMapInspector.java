@@ -18,7 +18,7 @@ package org.logicmill.util.concurrent;
 import java.util.Iterator;
 
 import org.logicmill.util.concurrent.ConcurrentHashMap;
-import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
+import org.logicmill.util.concurrent.ConcurrentHashMapProbe.SegmentProbe;
 
 
 /** A utility associated with {@link ConcurrentHashMap} that collects
@@ -28,7 +28,7 @@ import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
  * a reference to the map instance:
  * <pre><code>
  * ConcurrentHashMap&lt;Key,Value&gt; map = new ConcurrentHashMap&lt;Key,Value&gt;(1024, 8, 0.8F);
- * ConcurrentLargeHashMapInspector inspector = new ConcurrentLargeHashMapInspector(map);
+ * ConcurrentHashMapInspector inspector = new ConcurrentHashMapInspector(map);
  * ...
  * </code></pre>
  * 
@@ -37,12 +37,12 @@ import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
  * @author David Curtis
  *
  */
-public class ConcurrentLargeHashMapInspector {
+public class ConcurrentHashMapInspector {
 	
-	private final ConcurrentLargeHashMapProbe mapProbe;
+	private final ConcurrentHashMapProbe mapProbe;
 
-	public ConcurrentLargeHashMapInspector(ConcurrentHashMap map) {
-		mapProbe = new ConcurrentLargeHashMapProbe(map);
+	public ConcurrentHashMapInspector(ConcurrentHashMap map) {
+		mapProbe = new ConcurrentHashMapProbe(map);
 	}
 	
 	public MapBucketAssay assayMap() {

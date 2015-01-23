@@ -15,9 +15,9 @@
  */
 package org.logicmill.util.concurrent;
 
-import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
+import org.logicmill.util.concurrent.ConcurrentHashMapProbe.SegmentProbe;
 
-/**Thrown by {@link ConcurrentLargeHashMapAuditor#verifyMapIntegrity(boolean, int)} 
+/**Thrown by {@link ConcurrentHashMapAuditor#verifyMapIntegrity(boolean, int)} 
  * to indicate internal disagreement regarding the number of entries in a 
  * segment. Each segment maintains an explicit entry count, incrementing on 
  * successful put operations and decrementing on successful remove operations. 

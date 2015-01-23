@@ -24,17 +24,17 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
 
 // import org.logicmill.util.LargeHashMap;
 import org.logicmill.util.concurrent.ConcurrentHashMap;
-import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.ProbeInternalException;
-import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
+import org.logicmill.util.concurrent.ConcurrentHashMapProbe.ProbeInternalException;
+import org.logicmill.util.concurrent.ConcurrentHashMapProbe.SegmentProbe;
 
 /** An object that verifies the integrity of an instance of 
  * {@link ConcurrentHashMap}. This class uses 
- * {@link ConcurrentLargeHashMapProbe}
+ * {@link ConcurrentHashMapProbe}
  * to gain access to private members of {@code ConcurrentHashMap}.
  * 
  * To audit an instance of {@code ConcurrentHashMap}:<pre><code>
  * ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap( ... );
- * ConcurrentLargeHashMapAuditor auditor = new ConcurrentLargeHashMapAuditor(map);
+ * ConcurrentHashMapAuditor auditor = new ConcurrentHashMapAuditor(map);
  * ...
  * try {
  * 	auditor.verifyMapIntegrity(true, 0);
@@ -52,11 +52,11 @@ import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
  * @see NullEntryInBucketException
  * @see WrongBucketException
  * @see WrongSegmentException
- * @see ConcurrentLargeHashMapProbe
+ * @see ConcurrentHashMapProbe
  * @author David Curtis
  *
  */
-public class ConcurrentLargeHashMapAuditor {
+public class ConcurrentHashMapAuditor {
 	
 	private class ExceptionLimitReachedException extends Exception {
 		private static final long serialVersionUID = -6214653529057631843L;
@@ -215,15 +215,15 @@ public class ConcurrentLargeHashMapAuditor {
 		}
 	}
 	
-	private final ConcurrentLargeHashMapProbe mapProbe;
+	private final ConcurrentHashMapProbe mapProbe;
 	private final int NULL_OFFSET;
 	private final int HOP_RANGE;
 
 	/**
 	 * @param map
 	 */
-	public ConcurrentLargeHashMapAuditor(ConcurrentHashMap<?,?> map) {
-		mapProbe = new ConcurrentLargeHashMapProbe(map);
+	public ConcurrentHashMapAuditor(ConcurrentHashMap<?,?> map) {
+		mapProbe = new ConcurrentHashMapProbe(map);
 		NULL_OFFSET = mapProbe.getNullOffset();
 		HOP_RANGE = mapProbe.getHopRange();
 	}
@@ -263,7 +263,7 @@ public class ConcurrentLargeHashMapAuditor {
 	 * @throws NullEntryInBucketException
 	 * @throws WrongBucketException
 	 * @throws WrongSegmentException
-	 * @throws ConcurrentLargeHashMapProbe
+	 * @throws ConcurrentHashMapProbe
 	 */
 	@SuppressWarnings("javadoc")
 	public LinkedList<SegmentIntegrityException> verifyMapIntegrity(boolean throwImmediately, int maxExceptions) throws SegmentIntegrityException {

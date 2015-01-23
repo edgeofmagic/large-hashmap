@@ -15,10 +15,10 @@
  */
 package org.logicmill.util.concurrent;
 
-import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
+import org.logicmill.util.concurrent.ConcurrentHashMapProbe.SegmentProbe;
 
 /** An abstract base class for exceptions thrown by 
- * {@link ConcurrentLargeHashMapAuditor#verifyMapIntegrity(boolean, int)},
+ * {@link ConcurrentHashMapAuditor#verifyMapIntegrity(boolean, int)},
  * to indicate detection of a structural anomaly. SegmentIntegrityException 
  * encapsulates identification of the segment in which the anomaly was observed
  * (common to all subclasses).

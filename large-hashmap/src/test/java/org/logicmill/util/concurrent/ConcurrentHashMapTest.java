@@ -40,21 +40,21 @@ import org.junit.Test;
 import org.logicmill.util.concurrent.ConcurrentHashMap;
 
 @SuppressWarnings("javadoc")
-public class ConcurrentLargeHashMapTest {
+public class ConcurrentHashMapTest {
 		
 	@SuppressWarnings("rawtypes")
 	/*
 	 * Performs a relatively exhaustive integrity check on the internal structure of the map.
-	 * See ConcurrentLargeHashMapAuditor for more details.
+	 * See ConcurrentHashMapAuditor for more details.
 	 */
 	private void checkMapIntegrity(ConcurrentHashMap map) throws SegmentIntegrityException {
-        ConcurrentLargeHashMapAuditor auditor = new ConcurrentLargeHashMapAuditor(map);
+        ConcurrentHashMapAuditor auditor = new ConcurrentHashMapAuditor(map);
 		LinkedList<SegmentIntegrityException> exceptions = auditor.verifyMapIntegrity(false, 0);
 		Assert.assertEquals("map integrity exceptions found", 0, exceptions.size());		
 	}
 	
 	private void printMapStats(ConcurrentHashMap<?,?> map, String title) {
-		ConcurrentLargeHashMapProbe mapProbe = new ConcurrentLargeHashMapProbe(map);
+		ConcurrentHashMapProbe mapProbe = new ConcurrentHashMapProbe(map);
 		System.out.println();
 		System.out.println(title);
 		System.out.printf("\tmap size %d%n", map.size());

@@ -322,7 +322,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V> {
 		
 		/*
 		 * For annotation only, not operationally significant. Accessed by
-		 * ConcurrentLargeHashMapProbe.SegmentProbe, with reflection, so there
+		 * ConcurrentHashMapProbe.SegmentProbe, with reflection, so there
 		 * is no local use of this private field.
 		 */
 		@SuppressWarnings("unused")
@@ -371,7 +371,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V> {
 		
 		/*
 		 * Accumulated concurrency event metrics, for reporting by
-		 * ConcurrentLargeHashMapInspector (the which see for a detailed 
+		 * ConcurrentHashMapInspector (the which see for a detailed 
 		 * discussion of these values).
 		 * 
 		 * The retry values are incremented during read operations,

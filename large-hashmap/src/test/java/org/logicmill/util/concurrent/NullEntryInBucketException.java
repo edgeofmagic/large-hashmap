@@ -15,9 +15,9 @@
  */
 package org.logicmill.util.concurrent;
 
-import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
+import org.logicmill.util.concurrent.ConcurrentHashMapProbe.SegmentProbe;
 
-/** Thrown by {@link ConcurrentLargeHashMapAuditor#verifyMapIntegrity(boolean, int)}
+/** Thrown by {@link ConcurrentHashMapAuditor#verifyMapIntegrity(boolean, int)}
  * indicate that a bucket contained a null entry reference.
  * @author David Curtis
  *

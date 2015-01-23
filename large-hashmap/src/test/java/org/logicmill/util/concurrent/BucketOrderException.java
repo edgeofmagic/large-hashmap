@@ -15,9 +15,9 @@
  */
 package org.logicmill.util.concurrent;
 
-import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
+import org.logicmill.util.concurrent.ConcurrentHashMapProbe.SegmentProbe;
 
-/** Thrown by {@link ConcurrentLargeHashMapAuditor#verifyMapIntegrity(boolean, int)} 
+/** Thrown by {@link ConcurrentHashMapAuditor#verifyMapIntegrity(boolean, int)} 
  * to indicate that entries in a hash map bucket are not in order. Order in the
  * bucket's linked list must correspond to the order of increasing offsets from
  * the bucket index.

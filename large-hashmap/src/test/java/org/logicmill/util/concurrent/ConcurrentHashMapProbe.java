@@ -33,7 +33,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * @author David Curtis
  *
  */
-public class ConcurrentLargeHashMapProbe {
+public class ConcurrentHashMapProbe {
 	
 	/** A wrapper for exceptions thrown within the probe implementation.
 	 * The possible causal exceptions include {@code SecurityException}, 
@@ -318,8 +318,8 @@ public class ConcurrentLargeHashMapProbe {
 		/** Returns the map probe object to which this segment probe belongs.
 		 * @return reference to the map probe object for this segment probe
 		 */
-		public ConcurrentLargeHashMapProbe getMapProbe() {
-			return ConcurrentLargeHashMapProbe.this;
+		public ConcurrentHashMapProbe getMapProbe() {
+			return ConcurrentHashMapProbe.this;
 		}
 		
 		/** Returns a long value containing set bits that correspond to entries
@@ -524,7 +524,7 @@ public class ConcurrentLargeHashMapProbe {
 	 * an internal error
 	 */
 	@SuppressWarnings({ "unchecked"})
-	public ConcurrentLargeHashMapProbe(Object map) throws ProbeInternalException {
+	public ConcurrentHashMapProbe(Object map) throws ProbeInternalException {
 		this.map = map;
 		try {
 			NULL_OFFSET = ReflectionProbe.getIntField(map, "NULL_OFFSET");

@@ -15,9 +15,9 @@
  */
 package org.logicmill.util.concurrent;
 
-import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
+import org.logicmill.util.concurrent.ConcurrentHashMapProbe.SegmentProbe;
 
-/** Thrown by {@link ConcurrentLargeHashMapAuditor#verifyMapIntegrity(boolean, int)}
+/** Thrown by {@link ConcurrentHashMapAuditor#verifyMapIntegrity(boolean, int)}
  * to indicate that an illegal value was observed in the 
  * {@code ConcurrentHashMap.Segment.offsets} array. Legal offset values include
  * only {@code NULL_OFFSET} (-1) and integers between 0 (inclusive) and 
