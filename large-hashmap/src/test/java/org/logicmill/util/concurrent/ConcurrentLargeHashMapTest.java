@@ -37,7 +37,7 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.logicmill.util.LargeHashMap;
 import org.logicmill.util.LongHashable;
-import org.logicmill.util.concurrent.ConcurrentLargeHashMap;
+import org.logicmill.util.concurrent.ConcurrentHashMap;
 
 @SuppressWarnings("javadoc")
 public class ConcurrentLargeHashMapTest {
@@ -47,13 +47,13 @@ public class ConcurrentLargeHashMapTest {
 	 * Performs a relatively exhaustive integrity check on the internal structure of the map.
 	 * See ConcurrentLargeHashMapAuditor for more details.
 	 */
-	private void checkMapIntegrity(ConcurrentLargeHashMap map) throws SegmentIntegrityException {
+	private void checkMapIntegrity(ConcurrentHashMap map) throws SegmentIntegrityException {
         ConcurrentLargeHashMapAuditor auditor = new ConcurrentLargeHashMapAuditor(map);
 		LinkedList<SegmentIntegrityException> exceptions = auditor.verifyMapIntegrity(false, 0);
 		Assert.assertEquals("map integrity exceptions found", 0, exceptions.size());		
 	}
 	
-	private void printMapStats(ConcurrentLargeHashMap<?,?> map, String title) {
+	private void printMapStats(ConcurrentHashMap<?,?> map, String title) {
 		ConcurrentLargeHashMapProbe mapProbe = new ConcurrentLargeHashMapProbe(map);
 		System.out.println();
 		System.out.println(title);
@@ -114,8 +114,8 @@ public class ConcurrentLargeHashMapTest {
 	
 	@Test
 	public void testKeyAdapter() {
-		ConcurrentLargeHashMap<byte[],Integer> map = 
-				new ConcurrentLargeHashMap<byte[],Integer>(8192, 8, 0.9f, byteAdapter);
+		ConcurrentHashMap<byte[],Integer> map = 
+				new ConcurrentHashMap<byte[],Integer>(8192, 8, 0.9f, byteAdapter);
 		RandomKeySet keySet = new RandomKeySet(16, 128, 1337L);
 		byte[] key = keySet.getKey();
 		byte[] keyCopy = Arrays.copyOf(key, key.length);
@@ -131,7 +131,7 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testConcurrentPut8() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		ConcurrentLargeHashMap<byte[],Integer> map = new ConcurrentLargeHashMap<byte[],Integer>(8192, 8, 0.9f, byteAdapter);
+		ConcurrentHashMap<byte[],Integer> map = new ConcurrentHashMap<byte[],Integer>(8192, 8, 0.9f, byteAdapter);
 		testConcurrentPut(map, 8, 1000000);
 		printMapStats(map, "testConcurrentPut8");
 	}
@@ -141,7 +141,7 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testConcurrentPutLoad1() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		ConcurrentLargeHashMap<byte[],Integer> map = new ConcurrentLargeHashMap<byte[],Integer>(524288, 2, 1.0f, byteAdapter);
+		ConcurrentHashMap<byte[],Integer> map = new ConcurrentHashMap<byte[],Integer>(524288, 2, 1.0f, byteAdapter);
 		testConcurrentPut(map, 4, 800000);
 		printMapStats(map, "testConcurrentPutLoad1");
 	}
@@ -152,8 +152,8 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testConcurrentPutRemoveGet8() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		ConcurrentLargeHashMap<byte[],Integer> map = 
-				new ConcurrentLargeHashMap<byte[],Integer>(4096, 8, 1.0f, byteAdapter);
+		ConcurrentHashMap<byte[],Integer> map = 
+				new ConcurrentHashMap<byte[],Integer>(4096, 8, 1.0f, byteAdapter);
 		testConcurrentPutRemoveGet(map, 8, 200000, 0.25f, 1000000L);
 		printMapStats(map, "testConcurrentPutRemoveGet8");
 	}
@@ -161,7 +161,7 @@ public class ConcurrentLargeHashMapTest {
 
 	@Test
 	public void testConcurrentPutRemoveGetSmash() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		ConcurrentLargeHashMap<byte[],Integer> map = new ConcurrentLargeHashMap<byte[],Integer>(8192, 2, 1.0f, byteAdapter);
+		ConcurrentHashMap<byte[],Integer> map = new ConcurrentHashMap<byte[],Integer>(8192, 2, 1.0f, byteAdapter);
 		testConcurrentPutRemoveGet(map, 4, 14400, 0.5f, 10000000L);
 		printMapStats(map, "testConcurrentPutRemoveGetSmash");
 	}
@@ -173,7 +173,7 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testConcurrentPutRemoveIteratorContract8() throws InterruptedException, ExecutionException, SegmentIntegrityException {
-		ConcurrentLargeHashMap<byte[],Integer> map = new ConcurrentLargeHashMap<byte[],Integer>(4096, 8, 0.8f, byteAdapter);
+		ConcurrentHashMap<byte[],Integer> map = new ConcurrentHashMap<byte[],Integer>(4096, 8, 0.8f, byteAdapter);
 		testConcurrentPutRemoveIteratorContract(map, 8, 200000, 0.5f);
 		printMapStats(map, "testConcurrentPutRemoveIteratorContract8");
 	}
@@ -181,14 +181,14 @@ public class ConcurrentLargeHashMapTest {
 
 	@Test
 	public void testConcurrentPutRemoveIteratorContract2Segs() throws InterruptedException, ExecutionException, SegmentIntegrityException {
-		ConcurrentLargeHashMap<byte[],Integer> map = new ConcurrentLargeHashMap<byte[],Integer>(65536, 2, 1.0f, byteAdapter);
+		ConcurrentHashMap<byte[],Integer> map = new ConcurrentHashMap<byte[],Integer>(65536, 2, 1.0f, byteAdapter);
 		testConcurrentPutRemoveIteratorContract(map, 4, 200000, 0.5f);
 		printMapStats(map, "testConcurrentPutRemoveIteratorContract2Segs");
 	}
 	
 	@Test
 	public void testConcurrentPutRemoveIterator4() throws InterruptedException, ExecutionException, SegmentIntegrityException {
-		ConcurrentLargeHashMap<byte[],Integer> map = new ConcurrentLargeHashMap<byte[],Integer>(65536, 2, 1.0f, byteAdapter);
+		ConcurrentHashMap<byte[],Integer> map = new ConcurrentHashMap<byte[],Integer>(65536, 2, 1.0f, byteAdapter);
 		testConcurrentPutRemoveIterator(map, 4, 200000, 0.5f, 1000000L);
 		printMapStats(map, "testConcurrentPutRemoveIterator4");
 	}
@@ -201,87 +201,87 @@ public class ConcurrentLargeHashMapTest {
 
 	@Test(expected=NullPointerException.class)
 	public void testGetNullKey() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		map.get(null);		
 	}
 	
 	@Test(expected=NullPointerException.class)
 	public void testContainsKeyNullKey() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		map.containsKey(null);		
 	}
 	
 	
 	@Test(expected=NullPointerException.class)
 	public void testPutIfAbsentNullKey() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		map.putIfAbsent(null, 1);		
 	}
 	
 	@Test(expected=NullPointerException.class)
 	public void testPutIfAbsentNullValue() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		map.putIfAbsent("Hello", null);		
 	}
 
 	@Test(expected=NullPointerException.class)
 	public void testPutNullKey() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		map.put(null, 1);		
 	}
 	
 	@Test(expected=NullPointerException.class)
 	public void testPutNullValue() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		map.put("Hello", null);		
 	}
 
 	@Test(expected=NullPointerException.class)
 	public void testRemoveKNullKey() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		map.remove(null);				
 	}
 	
 
 	@Test(expected=NullPointerException.class)
 	public void testRemoveKVNullKey() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		map.remove(null, 1);				
 	}
 
 	@Test(expected=NullPointerException.class)
 	public void testRemoveKVNullValue() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		map.remove("Hello", null);				
 	}
 
 	@Test(expected=NullPointerException.class)
 	public void testReplaceKVNullKey() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		map.replace(null, 1);				
 	}
 
 	@Test(expected=NullPointerException.class)
 	public void testReplaceKVNullValue() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		map.replace("Hello", null);				
 	}
 
 	@Test(expected=NullPointerException.class)
 	public void testReplaceKVVNullKey() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		map.replace(null, 1, 2);				
 	}
 
 	@Test(expected=NullPointerException.class)
 	public void testReplaceKVVNullOldValue() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		map.replace("Hello", null, 2);				
 	}
 	
 	@Test(expected=NullPointerException.class)
 	public void testReplaceKVVNullNullValue() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		map.replace("Hello", 1, null);				
 	}
 	
@@ -289,7 +289,7 @@ public class ConcurrentLargeHashMapTest {
 	
 	@Test
 	public void testDefaultKeyAdapterString() throws SegmentIntegrityException {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		map.put("hello", 1);
 		Assert.assertTrue(map.containsKey("hello"));
 	}
@@ -322,8 +322,8 @@ public class ConcurrentLargeHashMapTest {
 	
 	@Test
 	public void testDefaultKeyAdapterLongHashable() throws SegmentIntegrityException {
-		final ConcurrentLargeHashMap<LongHashableString, Integer> map = 
-				new ConcurrentLargeHashMap<LongHashableString, Integer>(1024, 2, 0.8f);
+		final ConcurrentHashMap<LongHashableString, Integer> map = 
+				new ConcurrentHashMap<LongHashableString, Integer>(1024, 2, 0.8f);
 		map.putIfAbsent(new LongHashableString("hello"), new Integer(0));
 		Integer n = map.get(new LongHashableString("hel"+"lo"));
 		Assert.assertNotNull(n);
@@ -333,8 +333,8 @@ public class ConcurrentLargeHashMapTest {
 	
 	@Test(expected=IllegalArgumentException.class)
 	public void testDefaultKeyAdapterTypeMismatch()  {
-		final ConcurrentLargeHashMap<Long, Integer> map = 
-			new ConcurrentLargeHashMap<Long, Integer>(1024, 2, 0.8f);
+		final ConcurrentHashMap<Long, Integer> map = 
+			new ConcurrentHashMap<Long, Integer>(1024, 2, 0.8f);
 		map.putIfAbsent(new Long(0L), new Integer(0));
 	}
 
@@ -343,7 +343,7 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testRemoveValue() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		String key = "Hello";
 		map.put(key, 1);
 		Assert.assertEquals(map.size(), 1);
@@ -361,8 +361,8 @@ public class ConcurrentLargeHashMapTest {
 	@Test
 	public void testRemoveValueAll() throws SegmentIntegrityException {
 		RandomKeySet keySet = new RandomKeySet(100000, 128, 1337L);
-		final ConcurrentLargeHashMap<byte[], Integer> map = 
-				new ConcurrentLargeHashMap<byte[], Integer>(1024, 2, 0.8f, byteAdapter);
+		final ConcurrentHashMap<byte[], Integer> map = 
+				new ConcurrentHashMap<byte[], Integer>(1024, 2, 0.8f, byteAdapter);
 		for (int i = 0; i < keySet.size(); i++) {
 			map.putIfAbsent(keySet.getKey(i), new Integer(i));
 		}
@@ -382,7 +382,7 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testContainsKeyAndRemove() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		String key = "Hello";
 		map.put(key, 1);
 		Assert.assertEquals(map.size(), 1);
@@ -397,7 +397,7 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testGet() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		String key = "Hello";
 		map.put(key, 1);
 		Assert.assertEquals(map.size(), 1);
@@ -411,7 +411,7 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testIsEmpty() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		Assert.assertTrue(map.isEmpty());
 		String key = "Hello";
 		map.put(key, 1);
@@ -426,7 +426,7 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testReplace() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		String key = "Hello";
 		map.put(key, 1);
 		Assert.assertEquals(map.size(), 1);
@@ -448,8 +448,8 @@ public class ConcurrentLargeHashMapTest {
 	@Test
 	public void testReplaceAll() throws SegmentIntegrityException {
 		RandomKeySet keySet = new RandomKeySet(100000, 128, 1337L);
-		final ConcurrentLargeHashMap<byte[], Integer> map = 
-				new ConcurrentLargeHashMap<byte[], Integer>(1024, 2, 0.8f, byteAdapter);	
+		final ConcurrentHashMap<byte[], Integer> map = 
+				new ConcurrentHashMap<byte[], Integer>(1024, 2, 0.8f, byteAdapter);	
 		for (int i = 0; i < keySet.size(); i++) {
 			map.putIfAbsent(keySet.getKey(i), new Integer(i));
 		}
@@ -465,8 +465,8 @@ public class ConcurrentLargeHashMapTest {
 	@Test
 	public void testPutWithReplace() throws SegmentIntegrityException {
 		RandomKeySet keySet = new RandomKeySet(100000, 128, 1337L);
-		final ConcurrentLargeHashMap<byte[], Integer> map = 
-				new ConcurrentLargeHashMap<byte[], Integer>(1024, 2, 0.8f, byteAdapter);	
+		final ConcurrentHashMap<byte[], Integer> map = 
+				new ConcurrentHashMap<byte[], Integer>(1024, 2, 0.8f, byteAdapter);	
 		for (int i = 0; i < keySet.size(); i++) {
 			map.putIfAbsent(keySet.getKey(i), new Integer(i));
 		}
@@ -489,7 +489,7 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testReplaceOldNew() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		String key = "Hello";
 		map.put(key, 1);
 		Assert.assertEquals(map.size(), 1);
@@ -517,7 +517,7 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test
 	public void testPutIfAbsent() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f, stringAdapter);
 		String key = "Hello";
 		Assert.assertNull(map.putIfAbsent(key, 1));
 		Assert.assertEquals(map.size(), 1);
@@ -541,8 +541,8 @@ public class ConcurrentLargeHashMapTest {
 	@Test
 	public void testEntryIterator() {
 		RandomKeySet keySet = new RandomKeySet(100000, 128, 1337L);
-		final ConcurrentLargeHashMap<byte[], Integer> map = 
-				new ConcurrentLargeHashMap<byte[], Integer>(4096, 8, 0.8f, byteAdapter);
+		final ConcurrentHashMap<byte[], Integer> map = 
+				new ConcurrentHashMap<byte[], Integer>(4096, 8, 0.8f, byteAdapter);
 		HashSet<byte[]> keysIntoMap = new HashSet<byte[]>();
 		HashSet<Integer> valsIntoMap = new HashSet<Integer>();
 		int i = 0;
@@ -570,7 +570,7 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test(expected=UnsupportedOperationException.class)
 	public void testEntryIteratorRemove() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(4096, 8, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(4096, 8, 0.8f, stringAdapter);
 		map.put("Hello", 1);
 		Iterator<LargeHashMap.Entry<String, Integer>> entryIter = map.getEntryIterator();
 		@SuppressWarnings("unused")
@@ -583,7 +583,7 @@ public class ConcurrentLargeHashMapTest {
 	 */
 	@Test(expected=NoSuchElementException.class)
 	public void testEntryIteratorExhaustion() {
-		final ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap<String, Integer>(4096, 8, 0.8f, stringAdapter);
+		final ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<String, Integer>(4096, 8, 0.8f, stringAdapter);
 		map.put("Hello", 1);
 		Iterator<LargeHashMap.Entry<String, Integer>> entryIter = map.getEntryIterator();
 		@SuppressWarnings("unused")
@@ -625,7 +625,7 @@ public class ConcurrentLargeHashMapTest {
 	 * @throws InterruptedException
 	 * @throws ExecutionException
 	 */
-	private void testConcurrentPutRemoveGet(final ConcurrentLargeHashMap<byte[], Integer> map,
+	private void testConcurrentPutRemoveGet(final ConcurrentHashMap<byte[], Integer> map,
 			final int threadCount, final int keyCount, final float recycleFraction, final long recycleLimit)
 			throws SegmentIntegrityException, InterruptedException, ExecutionException {
 		
@@ -735,12 +735,12 @@ public class ConcurrentLargeHashMapTest {
 	
 	@Test
 	public void testConcurrentGet4() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		ConcurrentLargeHashMap<byte[], Integer> map = 
-				new ConcurrentLargeHashMap<byte[], Integer>(8192, 4, 0.8f, byteAdapter);
+		ConcurrentHashMap<byte[], Integer> map = 
+				new ConcurrentHashMap<byte[], Integer>(8192, 4, 0.8f, byteAdapter);
 		testConcurrentGet(map, 4, 200000, 5000000L);
 	}
 	
-	private void testConcurrentGet(final ConcurrentLargeHashMap<byte[], Integer> map, int threadCount, final int keyCount, final long getLimit)
+	private void testConcurrentGet(final ConcurrentHashMap<byte[], Integer> map, int threadCount, final int keyCount, final long getLimit)
 			throws SegmentIntegrityException, InterruptedException, ExecutionException {
 
 		final RandomKeySet keySet = new RandomKeySet(keyCount, 128, 1337L);
@@ -797,7 +797,7 @@ public class ConcurrentLargeHashMapTest {
 	 * @throws InterruptedException
 	 * @throws ExecutionException
 	 */
-	private void testConcurrentPut(final ConcurrentLargeHashMap<byte[], Integer> map, int threadCount, int keyCount)
+	private void testConcurrentPut(final ConcurrentHashMap<byte[], Integer> map, int threadCount, int keyCount)
 			throws SegmentIntegrityException, InterruptedException, ExecutionException {
 
 		final RandomKeySet keySet = new RandomKeySet(keyCount, 128, 1337L);
@@ -854,7 +854,7 @@ public class ConcurrentLargeHashMapTest {
 	 * @throws ExecutionException
 	 * @throws SegmentIntegrityException
 	 */
-	private void testConcurrentPutRemoveIteratorContract(final ConcurrentLargeHashMap<byte[], Integer> map, 
+	private void testConcurrentPutRemoveIteratorContract(final ConcurrentHashMap<byte[], Integer> map, 
 			int threadCount, final int keyCount, float fractionInPool) 
 	throws InterruptedException, ExecutionException, SegmentIntegrityException {
 		final ConcurrentLinkedQueue<byte[]> initallyInMap = new ConcurrentLinkedQueue<byte[]>();
@@ -976,7 +976,7 @@ public class ConcurrentLargeHashMapTest {
         		addedAndObserved, removedAndObserved, observed.size(), map.size() );
 	}
 	
-	private void testConcurrentPutRemoveIterator(final ConcurrentLargeHashMap<byte[], Integer> map,
+	private void testConcurrentPutRemoveIterator(final ConcurrentHashMap<byte[], Integer> map,
 			final int threadCount, final int keyCount, final float recycleFraction, final long recycleLimit)
 			throws SegmentIntegrityException, InterruptedException, ExecutionException {
 		

@@ -26,7 +26,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.logicmill.util.LargeHashMap;
 
 /** A reflection-based test probe for accessing the internal data structures 
- * of an instance of ConcurrentLargeHashMap. The bulk of the workload is delegated
+ * of an instance of ConcurrentHashMap. The bulk of the workload is delegated
  * to the nested class {@code SegmentProbe}.
  * 
  * @author David Curtis
@@ -58,7 +58,7 @@ public class ConcurrentLargeHashMapProbe {
 	}
 	
 	/** A reflection-based probe for inspecting the internal data structures of
-	 * an instance of {@code ConcurrentLargeHashMap.Segment}.
+	 * an instance of {@code ConcurrentHashMap.Segment}.
 	 * @author David Curtis
 	 *
 	 */
@@ -517,7 +517,7 @@ public class ConcurrentLargeHashMapProbe {
 	
 	/**
 	 * Creates a new probe object for the specified hash map.
-	 * @param map instance of {@code ConcurrentLargeHashMap} associated with 
+	 * @param map instance of {@code ConcurrentHashMap} associated with 
 	 * this probe
 	 * @throws ProbeInternalException if creation failed due to
 	 * an internal error

@@ -22,7 +22,7 @@ import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
  * segment. Each segment maintains an explicit entry count, incrementing on 
  * successful put operations and decrementing on successful remove operations. 
  * The integrity check counts entries reachable in bucket lists, and non-null 
- * entry references in the {@code ConcurrentLargeHashMap.Segment.entries} array. 
+ * entry references in the {@code ConcurrentHashMap.Segment.entries} array. 
  * All three counts should agree.
  * @author David Curtis
  *

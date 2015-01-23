@@ -14,19 +14,31 @@
  * limitations under the License.
  */
 package org.logicmill.util.concurrent;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
+import java.lang.reflect.Field;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.AbstractCollection;
+import java.util.AbstractSet;
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.Collection;
+import java.util.Enumeration;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
-import org.logicmill.util.LargeHashMap;
-import org.logicmill.util.LongHashable;
+//import org.logicmill.util.LargeHashMap;
+//import org.logicmill.util.LongHashable;
 
 /** 
  * A concurrent hash map that scales well to large data sets.
@@ -85,7 +97,7 @@ import org.logicmill.util.LongHashable;
  * concurrency strategies described in the originating papers, with minor 
  * variations.
  * <h3>Long Hash Codes</h3>
- * ConcurrentLargeHashMap is designed to support hash maps that can expand to very 
+ * ConcurrentHashMap is designed to support hash maps that can expand to very 
  * large size (> 2<sup>32</sup> items). To that end, it uses 64-bit hash codes.
  * <h4>Hash function requirements</h4>
  * Because segment size is a power of 2, segment indices consist of bit fields
@@ -94,18 +106,18 @@ import org.logicmill.util.LongHashable;
  * implementation of Bob Jenkins' SpookyHash V2 algorithm 
  * ({@link org.logicmill.util.hash.SpookyHash} and 
  * {@link org.logicmill.util.hash.SpookyHash64}) is available in conjunction 
- * with ConcurrentLargeHashMap, and is highly recommended.
+ * with ConcurrentHashMap, and is highly recommended.
  * <h4>Key adapters</h4>
- * {@code ConcurrentLargeHashMap} uses key adapters (see {@link 
+ * {@code ConcurrentHashMap} uses key adapters (see {@link 
  * org.logicmill.util.LargeHashMap.KeyAdapter}) to obtain 64-bit hash codes 
  * from keys, and to perform matching comparisons on keys. A reference to a key 
  * adapter implementation can be passed as a parameter to the constructor 
- * {@link #ConcurrentLargeHashMap(int, int, float, LargeHashMap.KeyAdapter)}.
- * {@code ConcurrentLargeHashMap} also provides a default key adapter 
+ * {@link #ConcurrentHashMap(int, int, float, LargeHashMap.KeyAdapter)}.
+ * {@code ConcurrentHashMap} also provides a default key adapter 
  * implementation that expects keys to implement {@link LongHashable}, and
  * uses {@code Object.equals()} for key matching. The default key adapter
  * is used when the map is constructed with 
- * {@link #ConcurrentLargeHashMap(int, int, float)}.
+ * {@link #ConcurrentHashMap(int, int, float)}.
  * <p id="footnote-1">[1] See 
  * <a href="http://dx.doi.org/10.1145%2F320083.320092"> Fagin, et al, 
  * "Extendible Hashing - A Fast Access Method for Dynamic Files", 
@@ -114,7 +126,7 @@ import org.logicmill.util.LongHashable;
  * <p id="footnote-2">[2] <a href="http://dl.acm.org/citation.cfm?id=588072">
  * Ellis, "Extendible Hashing for Concurrent Operations and Distributed Data", 
  * PODS 1983</a> describes strategies for concurrent operations on extendible 
- * hash tables. The strategy used in ConcurrentLargeHashMap is informed
+ * hash tables. The strategy used in ConcurrentHashMap is informed
  * by this paper, but does not follow it precisely.</p>
  * <p id="footnote-3">[3] 
  * <a href="http://mcg.cs.tau.ac.il/papers/disc2008-hopscotch.pdf">
@@ -129,42 +141,115 @@ import org.logicmill.util.LongHashable;
  * @param <K> type of keys stored in the map
  * @param <V> type of values stored in the map
  */
-public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
+public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V> {
+	
+	
+    /**
+     * Applies a supplemental hash function to a given hashCode, which
+     * defends against poor quality hash functions.  This is critical
+     * because ConcurrentHashMap uses power-of-two length hash tables,
+     * that otherwise encounter collisions for hashCodes that do not
+     * differ in lower or upper bits.
+     */
+    private static int hash(int h) {
+        // Spread bits to regularize both segment and index locations,
+        // using variant of single-word Wang/Jenkins hash.
+        h += (h <<  15) ^ 0xffffcd7d;
+        h ^= (h >>> 10);
+        h += (h <<   3);
+        h ^= (h >>>  6);
+        h += (h <<   2) + (h << 14);
+        return h ^ (h >>> 16);
+    }
 	
 	/*
 	 * Default entry implementation, stores hash codes to avoid repeatedly 
 	 * computing them.
 	 */
-	private static class Entry<K,V> implements LargeHashMap.Entry<K, V> {
+	private static class HashEntry<K,V> implements Map.Entry<K, V>, Serializable {
+		/**
+		 * 
+		 */
+		private static final long serialVersionUID = -4898232051318565333L;
 		private final K key;
 		private final V value;
-		private final long hashCode;
+		private transient final int keyHashCode;
 		
-		private Entry(K key, V value, long hashCode) {
+		private HashEntry(K key, V value, int keyHashCode) {
 			this.key = key;
 			this.value = value;
-			this.hashCode = hashCode;
+			this.keyHashCode = keyHashCode;
+		}
+		
+		private HashEntry(K key, V value) {
+			this(key, value, hash(key.hashCode()));
+		}
+		
+		private HashEntry(Map.Entry<? extends K, ? extends V> e) {
+			this(e.getKey(), e.getValue());
 		}
 		
 		@Override
 		public K getKey() {
 			return key;
 		}
-		
+
 		@Override
 		public V getValue() {
 			return value;
 		}
 		
-		private long getHashCode() {
-			return hashCode;
+		@SuppressWarnings("rawtypes")
+		@Override
+		public boolean equals(Object obj) {
+			if (obj instanceof Map.Entry) {
+				Map.Entry e = (Map.Entry) obj;
+				return key.equals(e.getKey()) && value.equals(e.getValue());
+			} else {
+				return false;
+			}
+		}
+		
+		@Override
+		public int hashCode() {
+			return keyHashCode * value.hashCode();
+		}
+		
+		private int getKeyHashCode() {
+			return keyHashCode;
+		}
+
+		@Override
+		public V setValue(V value) {
+			throw new UnsupportedOperationException();
+		}
+		
+		@Override
+		public String toString() {
+			return key + "=" + value;
+		}
+		
+		private void writeObject(ObjectOutputStream s) throws IOException {
+			s.defaultWriteObject();
+		}
+		
+		private void readObject(ObjectInputStream s) throws IOException, ClassNotFoundException {
+			s.defaultReadObject();
+			Field f;
+			try {
+				f = this.getClass().getDeclaredField("keyHashCode");
+				f.setAccessible(true);
+				f.setInt(this, hash(key.hashCode()));
+			} catch (NoSuchFieldException | SecurityException | IllegalArgumentException | IllegalAccessException e) {
+				assert false : e.getMessage() + "should never happen";
+			}
 		}
 	}
 
 	/*
 	 * Default key adapter. 
 	 */
-	private static class DefaultKeyAdapter<K> implements LargeHashMap.KeyAdapter<K> {
+/*	private static class DefaultKeyAdapter<K> implements LargeHashMap.KeyAdapter<K> {
 
 		@Override
 		public long getLongHashCode(Object key) {
@@ -180,7 +265,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			return mapKey.equals(key);
 		}
 	}
-	
+*/	
 	/*
 	 * REGARDING SEGMENT STRUCTURE
 	 * 
@@ -197,7 +282,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * A hash code value is converted to a array index for the buckets array 
 	 * like this:
 	 * 
-	 * 		bucketIndex = (hashCode >>> localDepth) & indexMask;  
+	 * 		bucketIndex = (keyHashCode >>> localDepth) & indexMask;  
 	 * 
 	 * where the (& indexMask) is equivalent to (% segmentSize). An offset is
 	 * applied to an index like this:
@@ -212,14 +297,14 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * 
 	 * 		if (buckets[bucketIndex] != NULL_OFFSET) {
 	 * 			int index = (bucketIndex + buckets[bucketIndex]) & indexMask;
-	 * 			Entry firstEntry = entries[index];
+	 * 			HashEntry firstEntry = entries[index];
 	 * 			...
 	 * 
 	 * Subsequent entries in the bucket by following the links in offsets:
 	 * 
 	 * 		while (offsets[index] != NULL_OFFSET) {
 	 * 			nextIndex = (bucketIndex + offsets[index]) & indexMask;
-	 * 			Entry nextEntry = entries[nextIndex];
+	 * 			HashEntry nextEntry = entries[nextIndex];
 	 * 			...
 	 * 			index = nextIndex;
 	 * 		}
@@ -253,7 +338,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 */
 		private final int localDepth;
 		private final int sharedBits;	
-		private final long sharedBitsMask;
+		private final int sharedBitsMask;
 		private final int indexMask;
 		
 		/*
@@ -264,11 +349,15 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 * by segment locks, but guaranteeing order of visibility is 
 		 * critical.
 		 */
-		private final AtomicReferenceArray<Entry<K,V>> entries;
+		private final AtomicReferenceArray<HashEntry<K,V>> entries;
 		private final AtomicIntegerArray offsets;
 		private final AtomicIntegerArray buckets;
 		private final AtomicIntegerArray timeStamps;
 
+		/*
+		 * entryCount is only modified during a segment lock, 
+		 * so it's volatile instead of atomic
+		 */
 		private volatile int entryCount;
 		
 		/*
@@ -284,7 +373,16 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 * Accumulated concurrency event metrics, for reporting by
 		 * ConcurrentLargeHashMapInspector (the which see for a detailed 
 		 * discussion of these values).
-		 */	
+		 * 
+		 * The retry values are incremented during read operations,
+		 * so they're not protected by a lock. The recycle values
+		 * are lock-protected. They probably don't need to be volatile,
+		 * but what the hell.
+		 */
+		
+		/*
+		 * TODO: revisit the need for long values of accumulated counts
+		 */
 		private final AtomicLong readRetrys;
 		private final AtomicInteger maxReadRetrys;
 		private final AtomicLong bucketRetrys;
@@ -311,13 +409,14 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			serialID = segmentSerialID.getAndIncrement();
 			this.localDepth = localDepth;
 			this.sharedBits = sharedBits;
-			sharedBitsMask = (long)((1 << localDepth) - 1);
+			sharedBitsMask = (1 << localDepth) - 1;
 			indexMask = segmentSize - 1;
 			offsets = new AtomicIntegerArray(segmentSize);
 			buckets = new AtomicIntegerArray(segmentSize);
-			entries = new AtomicReferenceArray<Entry<K,V>>(segmentSize);
+			entries = new AtomicReferenceArray<HashEntry<K,V>>(segmentSize);
 			timeStamps = new AtomicIntegerArray(segmentSize);
 			for (int i = 0; i < segmentSize; i++) {
+				// TODO: fix the interpretation of bucket lists so zero is NULL
 				buckets.set(i,NULL_OFFSET);
 			}
 			lock = new ReentrantLock(true);
@@ -334,7 +433,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			
 		}
 			
-		private boolean sharedBitsMatchSegment(long hashValue) {
+		private boolean sharedBitsMatchSegment(int hashValue) {
 			return sharedBits(hashValue) == sharedBits;	
 		}
 		
@@ -345,15 +444,15 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 */
 		@SuppressWarnings("unchecked")
 		private Segment[] split() {
-			Segment[] splitPair = new ConcurrentLargeHashMap.Segment[2];
+			Segment[] splitPair = new ConcurrentHashMap.Segment[2];
 			int  newLocalDepth = localDepth + 1;
 			int newSharedBitMask = 1 << localDepth;
 			splitPair[0] = new Segment(newLocalDepth, sharedBits);
 			splitPair[1] = new Segment(newLocalDepth, sharedBits | newSharedBitMask);
 			for (int i = 0; i < segmentSize; i++) {
-				Entry<K,V> entry = entries.get(i);
+				HashEntry<K,V> entry = entries.get(i);
 				if (entry != null) {
-					if ((entry.getHashCode() & (long)newSharedBitMask) == 0) {
+					if ((entry.getKeyHashCode() & newSharedBitMask) == 0) {
 						splitPair[0].splitPut(entry);
 					} else {
 						splitPair[1].splitPut(entry);
@@ -366,12 +465,12 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		/*
 		 * Calculates a bucket index from a hash code value.
 		 */
-		private int bucketIndex(long hashCode) {
-			return (int)((hashCode >>> localDepth) & (long)indexMask);
+		private int bucketIndex(int hashCode) {
+			return (hashCode >>> localDepth) & indexMask;
 		}
 		
-		private int sharedBits(long hashCode) {
-			return (int)(hashCode & sharedBitsMask);
+		private int sharedBits(int hashCode) {
+			return hashCode & sharedBitsMask;
 		}
 		
 		private int wrapIndex(int unwrappedIndex) {
@@ -379,16 +478,16 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		}
 		
 		/*
-		 * splitPut(Entry<K,V>) is only used during a split, which allows 
+		 * splitPut(HashEntry<K,V>) is only used during a split, which allows 
 		 * some simplifying assumptions to be made, to wit:
 		 * 	1) overflow shouldn't happen,
 		 * 	2) the target segment is visible only to the current thread, and
 		 * 	2) the key/entry can't already be in the segment.
 		 */
-		private void splitPut(Entry<K,V> entry) {
+		private void splitPut(HashEntry<K,V> entry) {
 			// assert sharedBits(entry.getHashCode()) == sharedBits;
 			try {
-				placeWithinHopRange(bucketIndex(entry.getHashCode()), entry);
+				placeWithinHopRange(bucketIndex(entry.getKeyHashCode()), entry);
 			} catch (SegmentOverflowException soex) {
 				/*
 				 *  This should not occur during split operation. Freak out.
@@ -404,7 +503,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 * findCloserSlot() constitute the core of the Hopscotch hashing 
 		 * algorithm implementation.
 		 */
-		void placeWithinHopRange(int bucketIndex, Entry<K,V> entry) 
+		void placeWithinHopRange(int bucketIndex, HashEntry<K,V> entry) 
 				throws SegmentOverflowException {
 			int freeSlotOffset = 0;
 			int freeSlotIndex = bucketIndex;
@@ -467,9 +566,9 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 				 *  free slot), then move its contents to free slot.
 				 */
 				// assert freeSlotIndex == wrapIndex(swapBucketIndex + freeSlotOffset);
-				final int oSwapSlot = buckets.get(swapBucketIndex);
-				if (oSwapSlot != NULL_OFFSET && oSwapSlot < freeSlotOffset) {
-					final int swapSlotIndex = wrapIndex(swapBucketIndex + oSwapSlot);
+				final int swapSlotOffset = buckets.get(swapBucketIndex);
+				if (swapSlotOffset != NULL_OFFSET && swapSlotOffset < freeSlotOffset) {
+					final int swapSlotIndex = wrapIndex(swapBucketIndex + swapSlotOffset);
 					entries.set(freeSlotIndex, entries.get(swapSlotIndex));
 					// assert freeSlotOffset == wrapIndex(freeSlotIndex + swapBucketIndex);
 					/*
@@ -585,7 +684,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 * If oldValue is null, treat it as replace(key, value), otherwise, only replace
 		 * if existing entry value equals oldValue.
 		 */
-		private V replace(Object key, long hashCode, V oldValue, V newValue) {
+		private V replace(K key, int hashCode, V oldValue, V newValue) {
 			int bucketIndex = bucketIndex(hashCode);
 			/*
 			 * Search for entry with key
@@ -593,8 +692,8 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			int nextOffset = buckets.get(bucketIndex);
 			while (nextOffset != NULL_OFFSET) {
 				int entryIndex = wrapIndex(bucketIndex + nextOffset);
-				Entry<K,V> entry = entries.get(entryIndex);
-				if (entry.getHashCode() == hashCode  && keyAdapter.keyMatches(entry.getKey(),key)) {
+				HashEntry<K,V> entry = entries.get(entryIndex);
+				if (entry.getKeyHashCode() == hashCode  && key.equals(entry.getKey())) {
 					if (oldValue != null && !
 							oldValue.equals(entry.getValue())) {
 						/*
@@ -602,7 +701,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 						 */
 						return null;
 					} else {
-						Entry<K,V> newEntry = new Entry<K,V>(entry.getKey(), newValue, hashCode);
+						HashEntry<K,V> newEntry = new HashEntry<K,V>(key, newValue, hashCode);
 						entries.set(entryIndex, newEntry);
 					}
 					return entry.getValue();						
@@ -619,7 +718,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 * Implements put() and putIfAbsent() on the appropriate segment. The
 		 * segment has already been locked by the thread on entry.
 		 */
-		private V put(K key, V value, long hashCode, boolean replaceIfPresent) 
+		private V put(K key, V value, int hashCode, boolean replaceIfPresent) 
 		throws SegmentOverflowException {
 			// assert sharedBits(hashValue) == sharedBits;
 			int bucketIndex = bucketIndex(hashCode);
@@ -629,10 +728,10 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			int nextOffset = buckets.get(bucketIndex);
 			while (nextOffset != NULL_OFFSET) {
 				int entryIndex = wrapIndex(bucketIndex + nextOffset);
-				Entry<K,V> entry = entries.get(entryIndex);
-				if (entry.getHashCode() == hashCode  && keyAdapter.keyMatches(entry.getKey(),key)) {
+				HashEntry<K,V> entry = entries.get(entryIndex);
+				if (entry.getKeyHashCode() == hashCode && key.equals(entry.getKey())) {
 					if (replaceIfPresent) {
-						Entry<K,V> newEntry = new Entry<K,V>(key, value, hashCode);
+						HashEntry<K,V> newEntry = new HashEntry<K,V>(key, value, hashCode);
 						entries.set(entryIndex, newEntry);
 					}
 					return entry.getValue();						
@@ -642,7 +741,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			/*
 			 *  Not found, insert the new entry.
 			 */
-			Entry<K,V> entry = new Entry<K,V>(key, value, hashCode);
+			HashEntry<K,V> entry = new HashEntry<K,V>(key, value, hashCode);
 			placeWithinHopRange(bucketIndex, entry);
 			entryCount++;
 			mapEntryCount.incrementAndGet();
@@ -650,7 +749,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		}
 	
 		
-		private V get(Object key, long hashValue) {
+		private V get(Object key, int hashValue) {
 			/*
 			 * In very high update-rate environments, it might be
 			 * necessary to limit re-tries, and go to a linear search of
@@ -667,7 +766,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 					int nextOffset = buckets.get(bucketIndex);
 					while (nextOffset != NULL_OFFSET) {
 						int nextIndex = wrapIndex(bucketIndex + nextOffset);
-						Entry<K,V> entry = entries.get(nextIndex);
+						HashEntry<K,V> entry = entries.get(nextIndex);
 						if (entry == null) {
 							/*
 							 * Concurrent update, re-try.
@@ -675,14 +774,14 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 							localRetrys++;
 							continue retry;
 						}
-						if (bucketIndex(entry.getHashCode()) != bucketIndex) {
+						if (bucketIndex(entry.getKeyHashCode()) != bucketIndex) {
 							/*
 							 * Concurrent update, re-try.
 							 */
 							localRetrys++;
 							continue retry;
 						}
-						if (entry.getHashCode() == hashValue && keyAdapter.keyMatches(entry.getKey(),key)) {
+						if (entry.getKeyHashCode() == hashValue && key.equals(entry.getKey())) {
 							return entry.getValue();
 						}
 						nextOffset = offsets.get(nextIndex);
@@ -733,11 +832,11 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 */
 		private int recycle(int freeSlotIndex) {
 			int adjacentEntryIndex = (freeSlotIndex - 1) & indexMask;
-			Entry<K,V> adjacentEntry = entries.get(adjacentEntryIndex);
+			HashEntry<K,V> adjacentEntry = entries.get(adjacentEntryIndex);
 			if (adjacentEntry != null) {
 				int adjacentEntryNextOffset = offsets.get(adjacentEntryIndex);
 				if (adjacentEntryNextOffset != NULL_OFFSET) {
-					int contractingBucketIndex = bucketIndex(adjacentEntry.getHashCode());
+					int contractingBucketIndex = bucketIndex(adjacentEntry.getKeyHashCode());
 					int movingEntryIndex = 
 							wrapIndex(contractingBucketIndex + adjacentEntryNextOffset);
 					entries.set(freeSlotIndex, entries.get(movingEntryIndex));
@@ -760,7 +859,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 * Public remove() delegates to this method on the appropriate segment.
 		 * The segment has already been locked by the calling thread. 
 		 */
-		private V remove(Object key, long hashValue, Object value) {
+		private V remove(Object key, int hashValue, Object value) {
 			// assert sharedBits(hashValue) == sharedBits;
 			int bucketIndex = bucketIndex(hashValue);			
 			V resultValue = null;
@@ -773,9 +872,9 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			 * since the buckets array is updated.
 			 */
 			int nextIndex = wrapIndex(bucketIndex + nextOffset);
-			Entry<K,V> entry = entries.get(nextIndex);
+			HashEntry<K,V> entry = entries.get(nextIndex);
 			// assert entry != null;
-			if (entry.getHashCode() == hashValue && keyAdapter.keyMatches(entry.getKey(),key)) {
+			if (entry.getKeyHashCode() == hashValue && key.equals(entry.getKey())) {
 				/*
 				 * First entry in the bucket was the key to be removed.
 				 */
@@ -816,7 +915,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 				nextIndex = wrapIndex(bucketIndex + nextOffset);
 				nextOffset = offsets.get(nextIndex);
 				entry = entries.get(nextIndex);
-				if (entry.getHashCode() == hashValue && keyAdapter.keyMatches(entry.getKey(),key)) {
+				if (entry.getKeyHashCode() == hashValue && key.equals(entry.getKey())) {
 					resultValue =  entry.getValue();
 					if (value != null && !value.equals(resultValue)) {
 						return null;
@@ -848,7 +947,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		 * 
 		 * Returns the number of entries in the specified bucket.
 		 */
-		private int getBucket(int bucketIndex, Entry<K,V>[] bucketContents) {
+		private int getBucket(int bucketIndex, HashEntry<K,V>[] bucketContents) {
 			int localRetrys = 0;
 			/*
 			 * In very high update-rate environments, it might be
@@ -879,7 +978,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 					}
 					while (nextOffset != NULL_OFFSET) {
 						int nextIndex = wrapIndex(bucketIndex + nextOffset);
-						Entry<K,V> entry = entries.get(nextIndex);
+						HashEntry<K,V> entry = entries.get(nextIndex);
 						if (entry == null) {
 							/*
 							 * Concurrent update, try again.
@@ -887,7 +986,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 							localRetrys++;
 							continue retry;
 						}
-						if (bucketIndex(entry.getHashCode()) != bucketIndex) {
+						if (bucketIndex(entry.getKeyHashCode()) != bucketIndex) {
 							/*
 							 * Concurrent update, try again.
 							 */
@@ -962,14 +1061,20 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * Minimum and maximum configuration values are for basic sanity checks
 	 * during construction.
 	 */
-	private static final int MIN_SEGMENT_SIZE = 4096;
+	private static final int MAX_CAPACITY = 1 << 30;
+	private static final int MIN_SEGMENT_SIZE = 1024;
 	private static final int MIN_INITIAL_SEGMENT_COUNT = 2;
+	private static final int MIN_INITIAL_CAPACITY = MIN_SEGMENT_SIZE * MIN_INITIAL_SEGMENT_COUNT;
 	private static final float MIN_LOAD_THRESHOLD = 0.1f;
 	private static final float MAX_LOAD_THRESHOLD = 1.0f;
-	private static final int MAX_SEGMENT_SIZE = 1 << 30;
-	private static final int MAX_DIR_SIZE = 1 << 30;
+	private static final float DEFAULT_LOAD_THRESHOLD = 0.8f;
+	private static final int MAX_SEGMENT_SIZE = MAX_CAPACITY / MIN_INITIAL_SEGMENT_COUNT;
+	private static final int MAX_DIR_SIZE = MAX_CAPACITY / MIN_SEGMENT_SIZE;
 			
 	private final int segmentSize;
+	private final int maxSegmentCount;
+	
+	
 	private final ReentrantLock dirLock;
 	private final AtomicReference<AtomicReferenceArray<Segment>> directory;
 	/*
@@ -982,8 +1087,13 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	private final AtomicInteger thresholdSplitCount;
 	private final AtomicInteger segmentSerialID;
 	
-	private final AtomicLong mapEntryCount;
+	private final AtomicInteger mapEntryCount;
 		
+    private transient Set<K> keySet;
+    private transient Set<Map.Entry<K,V>> entrySet;
+    private transient Collection<V> values;
+
+	
 	private static class SegmentOverflowException extends Exception {
 		private static final long serialVersionUID = -5917984727339916861L;	
 	}	
@@ -998,8 +1108,188 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		}
 		return i;
 	}
+	
+	public static class MapConfig {
+		private final int segmentSize;
+		private final int initSegments;
+		private final int maxSegmentCount;
+		private final float loadFactor;
+		private MapConfig(int segSize, int initSegs, int maxSegs, float factor) {
+			segmentSize = segSize;
+			initSegments = initSegs;
+			maxSegmentCount = maxSegs;
+			loadFactor = factor;
+		}
+		public int getSegmentSize() {
+			return segmentSize;
+		}
+		public int getInitSegments() {
+			return initSegments;
+		}
+		public int getMaxSegmentCount() {
+			return maxSegmentCount;
+		}	
+		public float getLoadFactor() {
+			return loadFactor;
+		}
+		public static MapConfigBuilder create() {
+			return new MapConfigBuilder();
+		}
 
-	private final LargeHashMap.KeyAdapter<K> keyAdapter;
+	}
+	
+	public static class MapConfigBuilder {
+		
+		private static int adjustSegmentSize(int segSize) {
+			segSize = nextPowerOfTwo(segSize);
+			if (segSize > MAX_SEGMENT_SIZE) {
+				segSize = MAX_SEGMENT_SIZE;
+			}
+			if (segSize < MIN_SEGMENT_SIZE) {
+				segSize = MIN_SEGMENT_SIZE;
+			}
+			return nextPowerOfTwo(segSize);			
+		}
+		
+		private static float adjustLoadFactor(float factor) {
+			if (factor > MAX_LOAD_THRESHOLD) {
+				factor = MAX_LOAD_THRESHOLD;
+			}
+			if (factor < MIN_LOAD_THRESHOLD) {
+				factor = MIN_LOAD_THRESHOLD;
+			}
+			return factor;
+			
+		}
+		
+		private static int adjustInitSegmentCount(int initSegCount, int maxSegments) {
+			initSegCount = nextPowerOfTwo(initSegCount);
+			if (initSegCount < MIN_INITIAL_SEGMENT_COUNT) {
+				initSegCount = MIN_INITIAL_SEGMENT_COUNT; 
+			} else if (initSegCount > maxSegments) {
+				initSegCount = maxSegments;
+			}
+			return initSegCount;
+		}
+
+		static private int segmentSizeFromExpected(int expectedSize) {
+			if (expectedSize < MIN_INITIAL_CAPACITY) {
+				expectedSize = MIN_INITIAL_CAPACITY;
+			}
+			if (expectedSize > MAX_CAPACITY) {
+				expectedSize = MAX_CAPACITY;
+			}
+			int expected = nextPowerOfTwo(expectedSize);
+
+			int ssize = nextPowerOfTwo((int)Math.sqrt((double) expectedSize));
+			if (ssize < MIN_SEGMENT_SIZE) {
+				ssize = MIN_SEGMENT_SIZE;
+			}
+			return ssize;
+		}
+		
+		static private int initSegmentCountFromCapacity(int segSize, int initCapacity) {
+			if (initCapacity > MAX_CAPACITY) {
+				initCapacity = MAX_CAPACITY;
+			}
+			int isegs = initCapacity / segSize;
+			if (isegs < MIN_INITIAL_SEGMENT_COUNT) {
+				return MIN_INITIAL_SEGMENT_COUNT;
+			}
+			isegs = nextPowerOfTwo(isegs);
+			int maxSegs = MAX_CAPACITY / segSize;
+			if (isegs > maxSegs) {
+				isegs = maxSegs;
+			}
+			return isegs;
+		}
+
+		private int requestedSegmentSize;
+		private boolean requestedSegmentSizeSet;
+		
+		private int requestedInitSegments;
+		private boolean requestedInitSegmentsSet;
+		
+		private int expectedMapSize;
+		private boolean expectedMapSizeSet;
+		
+		private int requestedInitCapacity;
+		private boolean requestedInitCapacitySet;
+		
+		private float requestedLoadFactor;
+		private boolean requestedLoadFactorSet;
+				
+		private MapConfigBuilder() {
+			requestedSegmentSizeSet = false;
+			requestedInitSegmentsSet = false;
+			expectedMapSizeSet = false;
+			requestedInitCapacitySet = false;
+			requestedLoadFactorSet = false;
+		}
+		
+		public MapConfigBuilder withSegmentSize(int segSize) {
+			requestedSegmentSize = segSize;
+			requestedSegmentSizeSet = true;
+			return this;
+		}
+		
+		public MapConfigBuilder withExpectedMapSize(int expectedSize) {
+			expectedMapSize = expectedSize;
+			expectedMapSizeSet = true;
+			return this;
+		}
+		
+		public MapConfigBuilder withInitCapacity(int initCap) {
+			requestedInitCapacity = initCap;
+			requestedInitCapacitySet = true;
+			return this;
+		}
+		
+		public MapConfigBuilder withInitSegmentCount(int segCount) {
+			requestedInitSegments = segCount;
+			requestedInitSegmentsSet = true;
+			return this;
+		}
+		
+		public MapConfigBuilder withLoadFactor(float factor) {
+			requestedLoadFactor = factor;
+			requestedLoadFactorSet = true;
+			return this;
+		}
+		
+		public MapConfig build() {
+			int segmentSize;
+			if (requestedSegmentSizeSet) {
+				segmentSize = adjustSegmentSize(requestedSegmentSize);
+			} else if (expectedMapSizeSet) {
+				segmentSize = segmentSizeFromExpected(expectedMapSize);
+			} else {
+				segmentSize = MIN_SEGMENT_SIZE;
+			}
+			int maxSegments = MAX_CAPACITY / segmentSize;
+
+			int initSegments;
+			if (requestedInitSegmentsSet) {
+				initSegments = adjustInitSegmentCount(requestedInitSegments, maxSegments);
+			} else if (requestedInitCapacitySet) {
+				initSegments = initSegmentCountFromCapacity(segmentSize, requestedInitCapacity);
+			} else {
+				initSegments = MIN_INITIAL_SEGMENT_COUNT;
+			}
+			
+			float loadFactor;
+			if (requestedLoadFactorSet) {
+				loadFactor = adjustLoadFactor(requestedLoadFactor);
+			} else {
+				loadFactor = DEFAULT_LOAD_THRESHOLD;
+			}
+			return new MapConfig(segmentSize, initSegments, maxSegments, loadFactor);
+		}
+		
+		
+	}
+	
+//	private final LargeHashMap.KeyAdapter<K> keyAdapter;
 	
 	/** Creates a new, empty map with the specified segment size, initial 
 	 * segment count, load threshold, and key adapter.
@@ -1046,60 +1336,40 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * 
 	 * @see org.logicmill.util.LargeHashMap.KeyAdapter
 	 */
-	public ConcurrentLargeHashMap(int segSize, int initSegCount, float loadThreshold, 
-			KeyAdapter<K> keyAdapter) {
-					
-		segSize = nextPowerOfTwo(segSize);		
-		initSegCount = nextPowerOfTwo(initSegCount);
-		
-		if (segSize < MIN_SEGMENT_SIZE) {
-			segSize = MIN_SEGMENT_SIZE;
-		} else if (segSize > MAX_SEGMENT_SIZE) {
-			segSize = MAX_SEGMENT_SIZE;
-		}
-		
-		if (initSegCount < MIN_INITIAL_SEGMENT_COUNT) {
-			initSegCount = MIN_INITIAL_SEGMENT_COUNT; 
-		} else if (initSegCount > MAX_DIR_SIZE) {
-			initSegCount = MAX_DIR_SIZE;
-		}
-		
-		if (loadThreshold < MIN_LOAD_THRESHOLD) {
-			loadThreshold = MIN_LOAD_THRESHOLD;
-		} else if (loadThreshold > MAX_LOAD_THRESHOLD) {
-			loadThreshold = MAX_LOAD_THRESHOLD;
-		}
-		
-		if (keyAdapter == null) {
-			throw new NullPointerException("keyAdapter must be non-null");
-		}
-		
-		int initDirCapacity = initSegCount;
-		segmentCount = initSegCount;
+	public ConcurrentHashMap(int segSize, int initSegs, float load) {
+		this(MapConfig.create()
+				.withSegmentSize(segSize)
+				.withInitSegmentCount(initSegs)
+				.withLoadFactor(load).build());
+	}
+	
+	public ConcurrentHashMap(MapConfig config) {
+		maxSegmentCount = config.getMaxSegmentCount();
+		segmentCount = config.getInitSegments();
 		forcedSplitCount = new AtomicInteger(0);
 		thresholdSplitCount = new AtomicInteger(0);
 		segmentSerialID = new AtomicInteger(0);
-		int dirSize = initSegCount;
-		segmentSize = segSize;
-		loadThresholdLimit = (int)(((float)segSize) * loadThreshold);
+		int dirSize = segmentCount;
+		segmentSize = config.getSegmentSize();
+		loadThresholdLimit = (int)(((float)segmentSize) * config.getLoadFactor());
 		int dirMask = dirSize - 1;
-		int depth = Long.bitCount(dirMask);
+		int depth = Integer.bitCount(dirMask);
 		AtomicReferenceArray<Segment> dir = 
-				new AtomicReferenceArray<Segment>(initDirCapacity);
-		for (int i = 0; i < initSegCount; i++) {
+				new AtomicReferenceArray<Segment>(segmentCount);
+		for (int i = 0; i < segmentCount; i++) {
 			dir.set(i, new Segment(depth, i));
 		}
 		dirLock = new ReentrantLock(true);
 		directory = new AtomicReference<AtomicReferenceArray<Segment>>(dir);
-		mapEntryCount = new AtomicLong(0L);
+		mapEntryCount = new AtomicInteger(0);		
 		
-		this.keyAdapter = keyAdapter;
 	}
 	
+
 	/** Creates a new, empty map with the specified segment size, initial 
 	 * segment count, load threshold, and a default key adapter 
 	 * implementation (see {@link 
-	 * #ConcurrentLargeHashMap(int, int, float, LargeHashMap.KeyAdapter)} for
+	 * #ConcurrentHashMap(int, int, float, LargeHashMap.KeyAdapter)} for
 	 * a discussion of segmentation issues).
 	 * <h4>Default key adapter</h4>
 	 * The default key adapter implementation expects key objects to implement
@@ -1118,10 +1388,10 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * @param loadThreshold fractional threshold for map growth, observed at 
 	 * the segment level
 	 */
-	public ConcurrentLargeHashMap(int segSize, int initSegCount, float loadThreshold) {
+/*	public ConcurrentHashMap(int segSize, int initSegCount, float loadThreshold) {
 		this(segSize, initSegCount, loadThreshold, new DefaultKeyAdapter<K>());
 	}
-
+*/
 	/**
 	 * {@inheritDoc}
 	 */
@@ -1149,9 +1419,9 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		while (true) {
 			AtomicReferenceArray<Segment> dir = directory.get();
 			int dirSize = dir.length();
-			long dirMask = dirSize - 1;
-			long hashCode = keyAdapter.getLongHashCode(key);
-			int segmentIndex = (int)(hashCode & (long)dirMask);
+			int dirMask = dirSize - 1;
+			int hashCode = hash(key.hashCode());
+			int segmentIndex = hashCode & dirMask;
 			Segment seg = dir.get(segmentIndex);
 			seg.lock.lock();
 			if (seg.invalid) {
@@ -1212,8 +1482,8 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			segmentCount++; // doesn't need to be atomic; only modified under directory lock
 			AtomicReferenceArray<Segment> dir = directory.get();
 			int dirSize = dir.length();
-			long dirMask = dirSize - 1;
-			int depth = Long.bitCount(dirMask);
+			int dirMask = dirSize - 1;
+			int depth = Integer.bitCount(dirMask);
 			/*
 			 * refresh directory info now that it's locked
 			 */
@@ -1235,7 +1505,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 				dirSize = newDirSize;
 				directory.set(dir);
 				dirMask = newDirSize - 1;
-				depth = Long.bitCount(dirMask);
+				depth = Integer.bitCount(dirMask);
 			}
 			final int step = 1 << split[0].localDepth;
 			for (int i = split[1].sharedBits; i < dirSize; i += step) {
@@ -1260,9 +1530,9 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 			throw new NullPointerException();
 		}
 		AtomicReferenceArray<Segment> dir = directory.get();
-		long dirMask = (long)(dir.length() - 1);
-		long hashCode = keyAdapter.getLongHashCode(key);
-		Segment seg = dir.get((int)(hashCode & dirMask));
+		int dirMask = dir.length() - 1;
+		int hashCode = hash(key.hashCode());
+		Segment seg = dir.get(hashCode & dirMask);
 		return seg.get(key, hashCode);
 	}
 	
@@ -1274,12 +1544,12 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		if (key == null) {
 			throw new NullPointerException();
 		}
-		long hashValue = keyAdapter.getLongHashCode(key);
+		int hashValue = hash(key.hashCode());
 		while (true) {
 			AtomicReferenceArray<Segment> dir = directory.get();
 			int dirSize = dir.length();
-			long dirMask = dirSize - 1;
-			int segmentIndex = (int)(hashValue & (long)dirMask);
+			int dirMask = dirSize - 1;
+			int segmentIndex = hashValue & dirMask;
 			Segment seg = dir.get(segmentIndex);
 			seg.lock.lock();
 			try {
@@ -1324,7 +1594,7 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		BitSet markedSegments;
 
 		private SegmentIterator() {
-			dir = ConcurrentLargeHashMap.this.directory.get();
+			dir = ConcurrentHashMap.this.directory.get();
 			dirSize = dir.length();
 			markedSegments = new BitSet(dirSize);
 			nextSegmentIndex = 0;
@@ -1377,26 +1647,28 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		}		
 	}
 			
-	private class EntryIterator implements Iterator<LargeHashMap.Entry<K,V>> {
+	private class HashEntryIterator implements Iterator<HashEntry<K,V>> {
 		
 		private final SegmentIterator segIter;
 		private Segment currentSegment;
 		int nextBucketIndex;
-		final Entry<K,V>[] currentBucket;
+		final HashEntry<K,V>[] currentBucket;
 		int currentBucketSize;
 		int nextEntryIndex;
+		private HashEntry<K,V> lastEntry;
 		
 		@SuppressWarnings("unchecked")
-		private EntryIterator() {
+		private HashEntryIterator() {
 			segIter = new SegmentIterator();
 			if (segIter.hasNext()) {
 				currentSegment = segIter.next();
 			}
-			currentBucket = new Entry[HOP_RANGE];
+			currentBucket = new HashEntry[HOP_RANGE];
 			nextBucketIndex = 0; // index in currentSegment of the next bucket
 			currentBucketSize = 0;
 			nextEntryIndex = 0; // index in currentBucket of the next entry
 			getNextBucket();
+			lastEntry = null;
 		}
 		
 		private void getNextBucket() {
@@ -1419,15 +1691,16 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		}
 						
 		@Override
-		public Entry<K,V> next() {
+		public HashEntry<K,V> next() {
 			if (currentBucketSize > 0) {
-				Entry<K,V> entry = currentBucket[nextEntryIndex++];
+				HashEntry<K,V> entry = currentBucket[nextEntryIndex++];
 				/*
 				 * Prime the iterator with the next entry, if there is one.
 				 */
 				if (nextEntryIndex >= currentBucketSize) {
 					 getNextBucket();
 				}
+				lastEntry = entry;
 				return entry;
 			} else {
 				throw new NoSuchElementException();
@@ -1442,7 +1715,12 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		
 		@Override
 		public void remove() {
-			throw new UnsupportedOperationException();
+			if (lastEntry == null) {
+				throw new IllegalStateException();
+			} else {
+				ConcurrentHashMap.this.remove(lastEntry.getKey());
+				lastEntry = null;
+			}
 		}		
 
 	}
@@ -1451,16 +1729,16 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	/**
 	 * {@inheritDoc}
 	 */
-	@Override
-	public Iterator<LargeHashMap.Entry<K,V>> getEntryIterator() {
-		return new EntryIterator();
-	}
+/*	@Override
+	public Iterator<HashEntry<K,V>> getEntryIterator() {
+		return new HashEntryIterator();
+	}*/
 
 	/**
 	 * {@inheritDoc}
 	 */
 	@Override
-	public long size() {
+	public int size() {
 		return mapEntryCount.get();
 	}
 
@@ -1485,12 +1763,12 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 		if (key == null || value == null) {
 			throw new NullPointerException();
 		}
-		long hashValue = keyAdapter.getLongHashCode(key);
+		int hashValue = hash(key.hashCode());
 		while (true) {
 			AtomicReferenceArray<Segment> dir = directory.get();
 			int dirSize = dir.length();
-			long dirMask = dirSize - 1;
-			int segmentIndex = (int)(hashValue & (long)dirMask);
+			int dirMask = dirSize - 1;
+			int segmentIndex = hashValue & dirMask;
 			Segment seg = dir.get(segmentIndex);
 			seg.lock.lock();
 			try {
@@ -1509,15 +1787,15 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * {@inheritDoc}
 	 */
 	@Override
-	public V replace(Object key, V value) {
+	public V replace(K key, V value) {
 		if (key == null || value == null) {
 			throw new NullPointerException();
 		}
-		long hashValue = keyAdapter.getLongHashCode(key);
+		int hashValue = hash(key.hashCode());
 		while (true) {
 			AtomicReferenceArray<Segment> dir = directory.get();
-			long dirMask = dir.length() - 1;
-			int segmentIndex = (int)(hashValue & (long)dirMask);
+			int dirMask = dir.length() - 1;
+			int segmentIndex = hashValue & dirMask;
 			Segment seg = dir.get(segmentIndex);
 			seg.lock.lock();
 			try {
@@ -1536,15 +1814,15 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	 * {@inheritDoc}
 	 */
 	@Override
-	public boolean replace(Object key, V oldValue, V newValue) {
+	public boolean replace(K key, V oldValue, V newValue) {
 		if (key == null || oldValue == null || newValue == null) {
 			throw new NullPointerException();
 		}
-		long hashValue = keyAdapter.getLongHashCode(key);
+		int hashValue = hash(key.hashCode());
 		while (true) {
 			AtomicReferenceArray<Segment> dir = directory.get();
-			long dirMask = dir.length() - 1;
-			int segmentIndex = (int)(hashValue & (long)dirMask);
+			int dirMask = dir.length() - 1;
+			int segmentIndex = hashValue & dirMask;
 			Segment seg = dir.get(segmentIndex);
 			seg.lock.lock();
 			try {
@@ -1566,5 +1844,204 @@ public class ConcurrentLargeHashMap<K, V> implements LargeHashMap<K, V> {
 	public boolean isEmpty() {
 		return mapEntryCount.get() == 0L;
 	}
+
+	@Override
+	public boolean containsValue(Object value) {
+		return get(value) != null;
+	}
+
+	@Override
+	public void putAll(Map<? extends K, ? extends V> m) {
+		for (Map.Entry<? extends K, ? extends V> e : m.entrySet()) {
+			put(e.getKey(), e.getValue());
+		}
+	}
+
+	@Override
+	public void clear() {
+		HashEntryIterator iter = new HashEntryIterator();
+		while (iter.hasNext()) {
+			iter.next();
+			iter.remove();
+		}
+	}
+
+	final class EntryIterator
+	implements Iterator<Entry<K,V>>
+	{
+		private HashEntryIterator iter = new HashEntryIterator();
+
+		public Map.Entry<K,V> next() {
+			return iter.next();
+		}
+
+		@Override
+		public boolean hasNext() {
+			return iter.hasNext();
+		}
+
+		@Override
+		public void remove() {
+			iter.remove();
+		}
+	}
+
+    final class KeyIterator
+        implements Iterator<K>, Enumeration<K>
+    {
+    	private final HashEntryIterator entryIter;
+    	
+    	private KeyIterator() {
+    		entryIter = new HashEntryIterator();
+    	}
+
+		@Override
+		public boolean hasMoreElements() {
+			return hasNext();
+		}
+
+		@Override
+		public K nextElement() {
+			return next();
+		}
+
+		@Override
+		public boolean hasNext() {
+			return entryIter.hasNext();
+		}
+
+		@Override
+		public K next() {
+			return entryIter.next().getKey();
+		}
+
+		@Override
+		public void remove() {
+			entryIter.remove();
+		}
+    }
+
+    final class ValueIterator
+    	implements Iterator<V>, Enumeration<V> {
+
+    	private final HashEntryIterator entryIter;
+
+    	private ValueIterator() {
+    		entryIter = new HashEntryIterator();
+    	}
+    	
+		@Override
+		public boolean hasMoreElements() {
+			return hasNext();
+		}
+
+		@Override
+		public V nextElement() {
+			return next();
+		}
+
+		@Override
+		public boolean hasNext() {
+			return entryIter.hasNext();
+		}
+
+		@Override
+		public V next() {
+			return entryIter.next().getValue();
+		}
+
+		@Override
+		public void remove() {
+			entryIter.remove();
+		}
+    	
+    }
+	
+    final class KeySet extends AbstractSet<K> {
+        public Iterator<K> iterator() {
+            return new KeyIterator();
+        }
+        public int size() {
+            return ConcurrentHashMap.this.size();
+        }
+        public boolean isEmpty() {
+            return ConcurrentHashMap.this.isEmpty();
+        }
+        public boolean contains(Object o) {
+            return ConcurrentHashMap.this.containsKey(o);
+        }
+        public boolean remove(Object o) {
+            return ConcurrentHashMap.this.remove(o) != null;
+        }
+        public void clear() {
+            ConcurrentHashMap.this.clear();
+        }
+    }
+    
+    final class Values extends AbstractCollection<V> {
+        public Iterator<V> iterator() {
+            return new ValueIterator();
+        }
+        public int size() {
+            return ConcurrentHashMap.this.size();
+        }
+        public boolean isEmpty() {
+            return ConcurrentHashMap.this.isEmpty();
+        }
+        public boolean contains(Object o) {
+            return ConcurrentHashMap.this.containsValue(o);
+        }
+        public void clear() {
+            ConcurrentHashMap.this.clear();
+        }
+    }
+
+
+    final class EntrySet extends AbstractSet<Map.Entry<K,V>> {
+        public Iterator<Map.Entry<K,V>> iterator() {
+            return new EntryIterator();
+        }
+        public boolean contains(Object o) {
+            if (!(o instanceof Map.Entry))
+                return false;
+            Map.Entry<?,?> e = (Map.Entry<?,?>)o;
+            V v = ConcurrentHashMap.this.get(e.getKey());
+            return v != null && v.equals(e.getValue());
+        }
+        public boolean remove(Object o) {
+            if (!(o instanceof Map.Entry))
+                return false;
+            Map.Entry<?,?> e = (Map.Entry<?,?>)o;
+            return ConcurrentHashMap.this.remove(e.getKey(), e.getValue());
+        }
+        public int size() {
+            return ConcurrentHashMap.this.size();
+        }
+        public boolean isEmpty() {
+            return ConcurrentHashMap.this.isEmpty();
+        }
+        public void clear() {
+            ConcurrentHashMap.this.clear();
+        }
+    }
+
+	
+	@Override
+	public Set<K> keySet() {
+        Set<K> ks = keySet;
+        return (ks != null) ? ks : (keySet = new KeySet());
+	}
+
+	@Override
+	public Collection<V> values() {
+        Collection<V> vs = values;
+        return (vs != null) ? vs : (values = new Values());
+	}
+
+	@Override
+    public Set<Map.Entry<K,V>> entrySet() {
+        Set<Map.Entry<K,V>> es = entrySet;
+        return (es != null) ? es : (entrySet = new EntrySet());
+    }
 
 }

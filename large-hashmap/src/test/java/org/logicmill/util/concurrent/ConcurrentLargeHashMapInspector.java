@@ -17,17 +17,17 @@ package org.logicmill.util.concurrent;
 
 import java.util.Iterator;
 
-import org.logicmill.util.concurrent.ConcurrentLargeHashMap;
+import org.logicmill.util.concurrent.ConcurrentHashMap;
 import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
 
 
-/** A utility associated with {@link ConcurrentLargeHashMap} that collects
+/** A utility associated with {@link ConcurrentHashMap} that collects
  * and reports performance-related statistics about a map's internal structure,
  * focusing particularly on bucket structure. 
  * To apply this class to a map instance, construct an inspector object with
  * a reference to the map instance:
  * <pre><code>
- * ConcurrentLargeHashMap&lt;Key,Value&gt; map = new ConcurrentLargeHashMap&lt;Key,Value&gt;(1024, 8, 0.8F);
+ * ConcurrentHashMap&lt;Key,Value&gt; map = new ConcurrentHashMap&lt;Key,Value&gt;(1024, 8, 0.8F);
  * ConcurrentLargeHashMapInspector inspector = new ConcurrentLargeHashMapInspector(map);
  * ...
  * </code></pre>
@@ -41,7 +41,7 @@ public class ConcurrentLargeHashMapInspector {
 	
 	private final ConcurrentLargeHashMapProbe mapProbe;
 
-	public ConcurrentLargeHashMapInspector(ConcurrentLargeHashMap map) {
+	public ConcurrentLargeHashMapInspector(ConcurrentHashMap map) {
 		mapProbe = new ConcurrentLargeHashMapProbe(map);
 	}
 	

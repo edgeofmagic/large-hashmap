@@ -21,17 +21,17 @@ import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
 import org.logicmill.util.LargeHashMap;
-import org.logicmill.util.concurrent.ConcurrentLargeHashMap;
+import org.logicmill.util.concurrent.ConcurrentHashMap;
 import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.ProbeInternalException;
 import org.logicmill.util.concurrent.ConcurrentLargeHashMapProbe.SegmentProbe;
 
 /** An object that verifies the integrity of an instance of 
- * {@link ConcurrentLargeHashMap}. This class uses 
+ * {@link ConcurrentHashMap}. This class uses 
  * {@link ConcurrentLargeHashMapProbe}
- * to gain access to private members of {@code ConcurrentLargeHashMap}.
+ * to gain access to private members of {@code ConcurrentHashMap}.
  * 
- * To audit an instance of {@code ConcurrentLargeHashMap}:<pre><code>
- * ConcurrentLargeHashMap<String, Integer> map = new ConcurrentLargeHashMap( ... );
+ * To audit an instance of {@code ConcurrentHashMap}:<pre><code>
+ * ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap( ... );
  * ConcurrentLargeHashMapAuditor auditor = new ConcurrentLargeHashMapAuditor(map);
  * ...
  * try {
@@ -220,7 +220,7 @@ public class ConcurrentLargeHashMapAuditor {
 	/**
 	 * @param map
 	 */
-	public ConcurrentLargeHashMapAuditor(ConcurrentLargeHashMap<?,?> map) {
+	public ConcurrentLargeHashMapAuditor(ConcurrentHashMap<?,?> map) {
 		mapProbe = new ConcurrentLargeHashMapProbe(map);
 		NULL_OFFSET = mapProbe.getNullOffset();
 		HOP_RANGE = mapProbe.getHopRange();
@@ -228,7 +228,7 @@ public class ConcurrentLargeHashMapAuditor {
 	
 	
 	/** Performs an exhaustive examination of the internal data structures of 
-	 * an instance of {@code ConcurrentLargeHashMap}, to verify the map's
+	 * an instance of {@code ConcurrentHashMap}, to verify the map's
 	 * integrity. If the value of {@code throwImmediately} is {@code true},
 	 * this method will throw an exception upon encountering an error.
 	 * Otherwise ({@code throwImmediately} is {@code false}) this method will
