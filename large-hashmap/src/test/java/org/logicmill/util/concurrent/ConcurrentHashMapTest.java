@@ -15,6 +15,11 @@
  */
 package org.logicmill.util.concurrent;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -65,66 +70,18 @@ public class ConcurrentHashMapTest {
 		System.out.printf("\tthreshold splits %d%n", mapProbe.getThresholdSplitCount());
 	}
 	
-/*	public static class ByteKeyAdapter implements LargeHashMap.KeyAdapter<byte[]> {
-		@Override
-		public long getLongHashCode(Object key) {
-			if (key instanceof byte[]) {
-				return org.logicmill.util.hash.SpookyHash64.hash((byte[])key,  0L);							
-			} else {
-				throw new IllegalArgumentException("key must be type byte[]");
+	public static int grabInt(ByteArrayKey key) {
+		int num = 0;
+		for (int i = 0; i < 4; i++) {
+			if (i >= key.size()) {
+				return num;
 			}
+			num <<= 8;
+			num |= ((int)key.getByte(i))  & 0x000000ff;
 		}
-		
-		@Override
-		public boolean keyMatches(byte[] mappedKey, Object key) {
-			if (key instanceof byte[]) {
-				byte[] byteKey = (byte[])key;
-				if (mappedKey.length != byteKey.length) return false;
-				for (int i = 0; i < byteKey.length; i++) {
-					if (mappedKey[i] != byteKey[i]) return false;
-				}
-				return true;
-			} else return false;
-		}
+		return num;
 	}
-*/	
-/*	public static class StringKeyAdapter implements LargeHashMap.KeyAdapter<String> {
-		@Override
-		public long getLongHashCode(Object key) {
-			if (key instanceof CharSequence) { 
-				return org.logicmill.util.hash.SpookyHash64.hash((CharSequence)key,  0L); 
-			} else {
-				throw new IllegalArgumentException("key must be type byte[]");
-			}
-		}
-		@Override
-		public boolean keyMatches(String mappedKey, Object key) {
-			if (key instanceof String) {
-				return mappedKey.equals(key);
-			} else if (key instanceof CharSequence) {
-				return mappedKey.contentEquals((CharSequence)key);
-			} else {
-				return false;
-			}
-		}
-	}*/
 	
-//	private final static StringKeyAdapter stringAdapter = new StringKeyAdapter();
-//	private final static ByteKeyAdapter byteAdapter = new ByteKeyAdapter();
-		
-/*	@Test
-	public void testKeyAdapter() {
-		ConcurrentHashMap<byte[],Integer> map = 
-				new ConcurrentHashMap<byte[],Integer>(8192, 8, 0.9f, byteAdapter);
-		RandomKeySet keySet = new RandomKeySet(16, 128, 1337L);
-		byte[] key = keySet.getKey();
-		byte[] keyCopy = Arrays.copyOf(key, key.length);
-		map.put(key, 1);
-		Integer value = map.get(keyCopy);
-		Assert.assertNotNull(value);
-		Assert.assertEquals(1L, value.intValue());	
-	}
-*/		
 	/*
 	 * Runs concurrent put test with 8 threads. If the test system has a larger number of cores, consider increasing
 	 * the thread count.
@@ -294,51 +251,9 @@ public class ConcurrentHashMapTest {
 		Assert.assertTrue(map.containsKey("hello"));
 	}
 		
-/*	public class LongHashableString implements LongHashable {
-		
-		private final String string;
-		
-		public LongHashableString(String s) {
-			string = s;
-		}
-
-		@Override
-		public long getLongHashCode() {
-			return org.logicmill.util.hash.SpookyHash64.hash(string, 0L);
-		}
-		
-		@Override
-		public boolean equals(Object obj) {
-			if (obj instanceof LongHashableString) {
-				LongHashableString other = (LongHashableString) obj;
-				return this.string.equals(other.string);
-			} else {
-				return false;
-			}
-
-		}
-		
-	}
-*/	
-/*	@Test
-	public void testDefaultKeyAdapterLongHashable() throws SegmentIntegrityException {
-		final ConcurrentHashMap<String, Integer> map = 
-				new ConcurrentHashMap<String, Integer>(1024, 2, 0.8f);
-		map.putIfAbsent(new String("hello"), new Integer(0));
-		Integer n = map.get(new String("hel"+"lo"));
-		Assert.assertNotNull(n);
-		Assert.assertEquals(0, n.intValue());
-        checkMapIntegrity(map);	
-	}
-*/	
-/*	@Test(expected=IllegalArgumentException.class)
-	public void testDefaultKeyAdapterTypeMismatch()  {
-		final ConcurrentHashMap<Long, Integer> map = 
-			new ConcurrentHashMap<Long, Integer>(1024, 2, 0.8f);
-		map.putIfAbsent(new Long(0L), new Integer(0));
-	}
-
-*/	/*
+	
+	
+	/*
 	 * Confirms that remove(key, value) only removes the entry if the key maps to the specified value.
 	 */
 	@Test
@@ -531,7 +446,64 @@ public class ConcurrentHashMapTest {
 	}
 	
 	
+	@Test
+	public void testEquals() {
+		RandomKeySet keySet = new RandomKeySet(10000, 128, 1337L);
+		final ConcurrentHashMap<ByteArrayKey, Integer> map1 = 
+				new ConcurrentHashMap<ByteArrayKey, Integer>(4096, 8, 0.8f);
+		while (keySet.hasMoreKeys()) {
+			ByteArrayKey key = keySet.getKey();
+			map1.put(key, grabInt(key));
+		}
+		keySet.reset();
+		keySet.shuffle(0xDEADBEEFL);
+		final ConcurrentHashMap<ByteArrayKey, Integer> map2 = 
+				new ConcurrentHashMap<ByteArrayKey, Integer>(4096, 8, 0.8f);
+		while (keySet.hasMoreKeys()) {
+			ByteArrayKey key = keySet.getKey();
+			map2.put(key, grabInt(key));
+		}
+		
+		Assert.assertEquals(map1, map2);
+	}
+	
+	@Test
+	public void testSerialization() {
+		RandomKeySet keySet = new RandomKeySet(10000, 128, 1337L);
+		final ConcurrentHashMap<ByteArrayKey, Integer> map1 = 
+				new ConcurrentHashMap<ByteArrayKey, Integer>(1024, 2, 0.9f);
+		while (keySet.hasMoreKeys()) {
+			ByteArrayKey key = keySet.getKey();
+			map1.put(key, grabInt(key));
+		}
 
+		try {
+			ByteArrayOutputStream baos = new ByteArrayOutputStream();
+			ObjectOutputStream oos = new ObjectOutputStream(baos);
+			oos.writeObject(map1);
+
+			ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+			ObjectInputStream ois = new ObjectInputStream(bais);
+			
+			ConcurrentHashMap<ByteArrayKey, Integer> map2 = 
+					(ConcurrentHashMap<ByteArrayKey, Integer>) ois.readObject();
+			Assert.assertEquals(map1, map2);
+			
+			checkMapIntegrity(map1);
+			printMapStats(map1, "testSerialization map1");
+			checkMapIntegrity(map2);
+			printMapStats(map1, "testSerialization map2");
+			
+		} catch (IOException e) {
+			System.out.println(e.getMessage());
+			Assert.fail(e.getMessage());
+		} catch (ClassNotFoundException e) {
+			Assert.fail(e.getMessage());
+		} catch (SegmentIntegrityException e) {
+			Assert.fail(e.getMessage());
+		}
+
+	}
 
 	/*
 	 * Confirms that the iterator returned by getEntryIterator() functions properly; specifically, that
@@ -567,7 +539,7 @@ public class ConcurrentHashMapTest {
 	
 	/*
 	 * Confirms that the EntryIterator.remove() method works and throws an IllegalStateException when
-	 * called inappropritely
+	 * called inappropriately
 	 */
 	@Test(expected=IllegalStateException.class)
 	public void testEntryIteratorRemove() {

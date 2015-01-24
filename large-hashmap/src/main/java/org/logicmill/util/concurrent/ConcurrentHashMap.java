@@ -141,10 +141,16 @@ import java.util.Set;
  * @param <K> type of keys stored in the map
  * @param <V> type of values stored in the map
  */
-public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V> {
+public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializable {
 	
 	
     /**
+	 * 
+	 */
+	private static final long serialVersionUID = -3876715633165576706L;
+
+
+	/**
      * Applies a supplemental hash function to a given hashCode, which
      * defends against poor quality hash functions.  This is critical
      * because ConcurrentHashMap uses power-of-two length hash tables,
@@ -212,7 +218,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V> {
 		
 		@Override
 		public int hashCode() {
-			return keyHashCode * value.hashCode();
+			return key.hashCode() ^ value.hashCode();
 		}
 		
 		private int getKeyHashCode() {
@@ -747,6 +753,33 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V> {
 			mapEntryCount.incrementAndGet();
 			return null;
 		}
+		
+		/*
+		 * only called by readObject during de-serialization.
+		 */
+		private void put(HashEntry<K,V> newEntry) throws SegmentOverflowException {
+			// assert sharedBits(hashValue) == sharedBits;
+			int hashCode = newEntry.getKeyHashCode();
+			int bucketIndex = bucketIndex(hashCode);
+			/*
+			 * Search for entry with key
+			 */
+			int nextOffset = buckets.get(bucketIndex);
+			while (nextOffset != NULL_OFFSET) {
+				int entryIndex = wrapIndex(bucketIndex + nextOffset);
+				HashEntry<K,V> mappedEntry = entries.get(entryIndex);
+				if (mappedEntry.getKeyHashCode() == hashCode && newEntry.getKey().equals(mappedEntry.getKey())) {
+					throw new IllegalStateException("duplicate entry key encountered during de-serialization");
+				}
+				nextOffset = offsets.get(entryIndex);
+			}
+			/*
+			 *  Not found, insert the new entry.
+			 */
+			placeWithinHopRange(bucketIndex, newEntry);
+			entryCount++;
+			mapEntryCount.incrementAndGet();
+		}
 	
 		
 		private V get(Object key, int hashValue) {
@@ -1049,13 +1082,13 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V> {
 	 * index that is considered when searching
 	 * for an open slot during insertion.
 	 */
-	static final int ADD_RANGE = 512;
+	private static final int ADD_RANGE = 512;
 	/*
 	 * Null values for buckets and hops array indices in Segment,
 	 * since zero is a valid offset and index.
 	 */
-	static final int NULL_OFFSET = -1;
-	static final int NULL_INDEX = -1;
+	private static final int NULL_OFFSET = -1;
+	private static final int NULL_INDEX = -1;
 
 	/*
 	 * Minimum and maximum configuration values are for basic sanity checks
@@ -1071,24 +1104,28 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V> {
 	private static final int MAX_SEGMENT_SIZE = MAX_CAPACITY / MIN_INITIAL_SEGMENT_COUNT;
 	private static final int MAX_DIR_SIZE = MAX_CAPACITY / MIN_SEGMENT_SIZE;
 			
+	/*
+	 * initial config values, handled by default serialization
+	 */
 	private final int segmentSize;
 	private final int maxSegmentCount;
-	
-	
-	private final ReentrantLock dirLock;
-	private final AtomicReference<AtomicReferenceArray<Segment>> directory;
-	/*
-	 * Maximum number of entries allowed in a segment before splitting.
-	 */
 	private final int loadThresholdLimit;
-
-	private volatile int segmentCount;
-	private final AtomicInteger forcedSplitCount;
-	private final AtomicInteger thresholdSplitCount;
-	private final AtomicInteger segmentSerialID;
+	private final int initSegmentCount;
 	
-	private final AtomicInteger mapEntryCount;
-		
+	/*
+	 * transient/final, must be initialized with reflection in readObject
+	 */
+	private transient final ReentrantLock dirLock;
+	private transient final AtomicReference<AtomicReferenceArray<Segment>> directory;
+	private transient volatile int segmentCount;	
+	private transient final AtomicInteger forcedSplitCount;
+	private transient final AtomicInteger thresholdSplitCount;
+	private transient final AtomicInteger segmentSerialID;	
+	private transient final AtomicInteger mapEntryCount;
+	
+	/*
+	 * initialize to null
+	 */	
     private transient Set<K> keySet;
     private transient Set<Map.Entry<K,V>> entrySet;
     private transient Collection<V> values;
@@ -1098,197 +1135,6 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V> {
 		private static final long serialVersionUID = -5917984727339916861L;	
 	}	
 
-	private static int nextPowerOfTwo(int num) {
-		if (num > 1 << 30) {
-			return 1 << 30;
-		}
-		int i = 1;
-		while (i < num) {
-			i <<= 1;
-		}
-		return i;
-	}
-	
-	public static class MapConfig {
-		private final int segmentSize;
-		private final int initSegments;
-		private final int maxSegmentCount;
-		private final float loadFactor;
-		private MapConfig(int segSize, int initSegs, int maxSegs, float factor) {
-			segmentSize = segSize;
-			initSegments = initSegs;
-			maxSegmentCount = maxSegs;
-			loadFactor = factor;
-		}
-		public int getSegmentSize() {
-			return segmentSize;
-		}
-		public int getInitSegments() {
-			return initSegments;
-		}
-		public int getMaxSegmentCount() {
-			return maxSegmentCount;
-		}	
-		public float getLoadFactor() {
-			return loadFactor;
-		}
-		public static MapConfigBuilder create() {
-			return new MapConfigBuilder();
-		}
-
-	}
-	
-	public static class MapConfigBuilder {
-		
-		private static int adjustSegmentSize(int segSize) {
-			segSize = nextPowerOfTwo(segSize);
-			if (segSize > MAX_SEGMENT_SIZE) {
-				segSize = MAX_SEGMENT_SIZE;
-			}
-			if (segSize < MIN_SEGMENT_SIZE) {
-				segSize = MIN_SEGMENT_SIZE;
-			}
-			return nextPowerOfTwo(segSize);			
-		}
-		
-		private static float adjustLoadFactor(float factor) {
-			if (factor > MAX_LOAD_THRESHOLD) {
-				factor = MAX_LOAD_THRESHOLD;
-			}
-			if (factor < MIN_LOAD_THRESHOLD) {
-				factor = MIN_LOAD_THRESHOLD;
-			}
-			return factor;
-			
-		}
-		
-		private static int adjustInitSegmentCount(int initSegCount, int maxSegments) {
-			initSegCount = nextPowerOfTwo(initSegCount);
-			if (initSegCount < MIN_INITIAL_SEGMENT_COUNT) {
-				initSegCount = MIN_INITIAL_SEGMENT_COUNT; 
-			} else if (initSegCount > maxSegments) {
-				initSegCount = maxSegments;
-			}
-			return initSegCount;
-		}
-
-		static private int segmentSizeFromExpected(int expectedSize) {
-			if (expectedSize < MIN_INITIAL_CAPACITY) {
-				expectedSize = MIN_INITIAL_CAPACITY;
-			}
-			if (expectedSize > MAX_CAPACITY) {
-				expectedSize = MAX_CAPACITY;
-			}
-			int expected = nextPowerOfTwo(expectedSize);
-
-			int ssize = nextPowerOfTwo((int)Math.sqrt((double) expectedSize));
-			if (ssize < MIN_SEGMENT_SIZE) {
-				ssize = MIN_SEGMENT_SIZE;
-			}
-			return ssize;
-		}
-		
-		static private int initSegmentCountFromCapacity(int segSize, int initCapacity) {
-			if (initCapacity > MAX_CAPACITY) {
-				initCapacity = MAX_CAPACITY;
-			}
-			int isegs = initCapacity / segSize;
-			if (isegs < MIN_INITIAL_SEGMENT_COUNT) {
-				return MIN_INITIAL_SEGMENT_COUNT;
-			}
-			isegs = nextPowerOfTwo(isegs);
-			int maxSegs = MAX_CAPACITY / segSize;
-			if (isegs > maxSegs) {
-				isegs = maxSegs;
-			}
-			return isegs;
-		}
-
-		private int requestedSegmentSize;
-		private boolean requestedSegmentSizeSet;
-		
-		private int requestedInitSegments;
-		private boolean requestedInitSegmentsSet;
-		
-		private int expectedMapSize;
-		private boolean expectedMapSizeSet;
-		
-		private int requestedInitCapacity;
-		private boolean requestedInitCapacitySet;
-		
-		private float requestedLoadFactor;
-		private boolean requestedLoadFactorSet;
-				
-		private MapConfigBuilder() {
-			requestedSegmentSizeSet = false;
-			requestedInitSegmentsSet = false;
-			expectedMapSizeSet = false;
-			requestedInitCapacitySet = false;
-			requestedLoadFactorSet = false;
-		}
-		
-		public MapConfigBuilder withSegmentSize(int segSize) {
-			requestedSegmentSize = segSize;
-			requestedSegmentSizeSet = true;
-			return this;
-		}
-		
-		public MapConfigBuilder withExpectedMapSize(int expectedSize) {
-			expectedMapSize = expectedSize;
-			expectedMapSizeSet = true;
-			return this;
-		}
-		
-		public MapConfigBuilder withInitCapacity(int initCap) {
-			requestedInitCapacity = initCap;
-			requestedInitCapacitySet = true;
-			return this;
-		}
-		
-		public MapConfigBuilder withInitSegmentCount(int segCount) {
-			requestedInitSegments = segCount;
-			requestedInitSegmentsSet = true;
-			return this;
-		}
-		
-		public MapConfigBuilder withLoadFactor(float factor) {
-			requestedLoadFactor = factor;
-			requestedLoadFactorSet = true;
-			return this;
-		}
-		
-		public MapConfig build() {
-			int segmentSize;
-			if (requestedSegmentSizeSet) {
-				segmentSize = adjustSegmentSize(requestedSegmentSize);
-			} else if (expectedMapSizeSet) {
-				segmentSize = segmentSizeFromExpected(expectedMapSize);
-			} else {
-				segmentSize = MIN_SEGMENT_SIZE;
-			}
-			int maxSegments = MAX_CAPACITY / segmentSize;
-
-			int initSegments;
-			if (requestedInitSegmentsSet) {
-				initSegments = adjustInitSegmentCount(requestedInitSegments, maxSegments);
-			} else if (requestedInitCapacitySet) {
-				initSegments = initSegmentCountFromCapacity(segmentSize, requestedInitCapacity);
-			} else {
-				initSegments = MIN_INITIAL_SEGMENT_COUNT;
-			}
-			
-			float loadFactor;
-			if (requestedLoadFactorSet) {
-				loadFactor = adjustLoadFactor(requestedLoadFactor);
-			} else {
-				loadFactor = DEFAULT_LOAD_THRESHOLD;
-			}
-			return new MapConfig(segmentSize, initSegments, maxSegments, loadFactor);
-		}
-		
-		
-	}
-	
 //	private final LargeHashMap.KeyAdapter<K> keyAdapter;
 	
 	/** Creates a new, empty map with the specified segment size, initial 
@@ -1345,13 +1191,16 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V> {
 	
 	public ConcurrentHashMap(MapConfig config) {
 		maxSegmentCount = config.getMaxSegmentCount();
+		initSegmentCount = config.getInitSegments();
+		segmentSize = config.getSegmentSize();
+		loadThresholdLimit = (int)(((float)segmentSize) * config.getLoadFactor());
+		
 		segmentCount = config.getInitSegments();
+		
 		forcedSplitCount = new AtomicInteger(0);
 		thresholdSplitCount = new AtomicInteger(0);
 		segmentSerialID = new AtomicInteger(0);
 		int dirSize = segmentCount;
-		segmentSize = config.getSegmentSize();
-		loadThresholdLimit = (int)(((float)segmentSize) * config.getLoadFactor());
 		int dirMask = dirSize - 1;
 		int depth = Integer.bitCount(dirMask);
 		AtomicReferenceArray<Segment> dir = 
@@ -1412,6 +1261,57 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V> {
 			throw new NullPointerException();
 		}
 		return put(key, value, true);
+	}
+	
+	/*
+	 * should only be invoked during de-serialization, so it doesn't
+	 * try to accommodate concurrency.
+	 */
+	private void put(HashEntry<K,V> entry) {
+		AtomicReferenceArray<Segment> dir = directory.get();
+		int dirSize = dir.length();
+		int dirMask = dirSize - 1;
+		int hashCode = entry.getKeyHashCode();
+		int segmentIndex = hashCode & dirMask;
+		Segment seg = dir.get(segmentIndex);
+
+		if (seg.entryCount < loadThresholdLimit) {
+			try {
+				seg.put(entry);
+				return;
+			} catch (SegmentOverflowException soe) {
+				if (GATHER_EVENT_DATA) {
+					forcedSplitCount.incrementAndGet();
+				}
+			}
+		} else {
+			if (GATHER_EVENT_DATA) {
+				thresholdSplitCount.incrementAndGet();
+			}
+		}
+		/*
+		 * Either load factor was exceeded or the insertion threw 
+		 * an overflow exception; split the segment.
+		 */
+		seg.invalid = true; // probably unnecessary
+		Segment[] split = seg.split();
+		if (GATHER_EVENT_DATA) {
+			split[0].copyMetrics(seg);
+		}
+		V result;
+		try {
+			if (split[0].sharedBitsMatchSegment(hashCode)) {
+				split[0].put(entry);
+			} else if (split[1].sharedBitsMatchSegment(hashCode)) {
+				split[1].put(entry);
+			} else {
+				throw new IllegalStateException("sharedBits conflict during segment split");
+			}
+		}
+		catch (SegmentOverflowException soe1) {
+			throw new IllegalStateException("sgement overflow occured after split");
+		}
+		updateDirectoryOnSplit(split);		
 	}
 	
 	private V put(K key, V value, boolean replaceIfPresent) {
@@ -1729,10 +1629,9 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V> {
 	/**
 	 * {@inheritDoc}
 	 */
-/*	@Override
-	public Iterator<HashEntry<K,V>> getEntryIterator() {
+	public Iterator<HashEntry<K,V>> getHashEntryIterator() {
 		return new HashEntryIterator();
-	}*/
+	}
 
 	/**
 	 * {@inheritDoc}
@@ -2045,11 +1944,328 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V> {
     }
 	
 	@Override 
-	public String toString() {
-		// TODO: implement
-		return null;
+    public String toString() {
+        Iterator<Entry<K,V>> i = entrySet().iterator();
+        if (! i.hasNext())
+            return "{}";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append('{');
+        for (;;) {
+            Entry<K,V> e = i.next();
+            K key = e.getKey();
+            V value = e.getValue();
+            sb.append(key   == this ? "(this Map)" : key);
+            sb.append('=');
+            sb.append(value == this ? "(this Map)" : value);
+            if (! i.hasNext())
+                return sb.append('}').toString();
+            sb.append(", ");
+        }
+    }
+	
+	@Override
+	public int hashCode() {
+		int h = 0;
+		Iterator<HashEntry<K,V>> i = getHashEntryIterator();
+		while (i.hasNext()) {
+			h += i.next().hashCode();
+		}
+		return h;
 	}
 	
-	// TODO: implement serialization
+	@Override
+	public boolean equals(Object obj) {
+		if (obj == this) {
+			return true;
+		}
+		if (!(obj instanceof Map)) {
+			return false;
+		}
+		Map<K,V> m = (Map<K,V>) obj;
+		if (m.size() != size()) {
+			return false;
+		}
+		try {
+			Iterator<Entry<K,V>> i = entrySet().iterator();
+			while (i.hasNext()) {
+				Entry<K,V> e = i.next();
+				K key = e.getKey();
+				V value = e.getValue();
+				Object mVal = m.get(key);
+				if (mVal == null) {
+					return false;
+				}
+				if (!value.equals(mVal)) {
+					return false;
+				}
+			}
+		} catch (ClassCastException | NullPointerException ignore) {
+			return false;
+		}
+		return true;
+	}
+	
+	private void writeObject(ObjectOutputStream s) throws IOException {
+		s.defaultWriteObject();
+		Iterator<HashEntry<K,V>> iter = getHashEntryIterator();
+		while (iter.hasNext()) {
+			s.writeObject(iter.next());
+		}
+		s.writeObject(null);
+	}
+	
+	private void readObject(ObjectInputStream s) throws IOException, ClassNotFoundException {
+		s.defaultReadObject();
+		
+		Field f;
+		try {
+			Class<? extends ConcurrentHashMap> clazz = this.getClass();
+			f = clazz.getDeclaredField("segmentCount");
+			f.setAccessible(true);
+			f.setInt(this, initSegmentCount);
+			
+			f = clazz.getDeclaredField("forcedSplitCount");
+			f.setAccessible(true);
+			f.set(this, new AtomicInteger(0));
+			
+			f = clazz.getDeclaredField("thresholdSplitCount");
+			f.setAccessible(true);
+			f.set(this, new AtomicInteger(0));
+			
+			f = clazz.getDeclaredField("segmentSerialID");
+			f.setAccessible(true);
+			f.set(this, new AtomicInteger(0));
+			
+			f = clazz.getDeclaredField("mapEntryCount");
+			f.setAccessible(true);
+			f.set(this, new AtomicInteger(0));
+			
+			f = clazz.getDeclaredField("dirLock");
+			f.setAccessible(true);
+			f.set(this, new ReentrantLock(true));
+			
+			int dirSize = segmentCount;
+			int dirMask = dirSize - 1;
+			int depth = Integer.bitCount(dirMask);
+			AtomicReferenceArray<Segment> dir = 
+					new AtomicReferenceArray<Segment>(segmentCount);
+			for (int i = 0; i < segmentCount; i++) {
+				dir.set(i, new Segment(depth, i));
+			}
+			
+			f = clazz.getDeclaredField("directory");
+			f.setAccessible(true);
+			f.set(this, new AtomicReference<AtomicReferenceArray<Segment>>(dir));
+			
+		} catch (NoSuchFieldException | SecurityException | IllegalArgumentException | IllegalAccessException e) {
+			assert false : e.getMessage() + "should never happen";
+		}
+		
+		while (true) {
+			HashEntry<K,V> entry = (HashEntry<K,V>) s.readObject();
+			if (entry == null) {
+				break;
+			}
+			put(entry);
+		}	
+	}
+	
+	
+	// TODO: implement serialization, equals, hashCode clone?
+	
+	public static class MapConfig {
+		private final int segmentSize;
+		private final int initSegments;
+		private final int maxSegmentCount;
+		private final float loadFactor;
+		private MapConfig(int segSize, int initSegs, int maxSegs, float factor) {
+			segmentSize = segSize;
+			initSegments = initSegs;
+			maxSegmentCount = maxSegs;
+			loadFactor = factor;
+		}
+		public int getSegmentSize() {
+			return segmentSize;
+		}
+		public int getInitSegments() {
+			return initSegments;
+		}
+		public int getMaxSegmentCount() {
+			return maxSegmentCount;
+		}	
+		public float getLoadFactor() {
+			return loadFactor;
+		}
+		public static MapConfigBuilder create() {
+			return new MapConfigBuilder();
+		}
+
+	}
+	
+	
+	public static class MapConfigBuilder {
+		
+		private static int nextPowerOfTwo(int num) {
+			if (num > 1 << 30) {
+				return 1 << 30;
+			}
+			int i = 1;
+			while (i < num) {
+				i <<= 1;
+			}
+			return i;
+		}
+		
+		private static int adjustSegmentSize(int segSize) {
+			segSize = nextPowerOfTwo(segSize);
+			if (segSize > MAX_SEGMENT_SIZE) {
+				segSize = MAX_SEGMENT_SIZE;
+			}
+			if (segSize < MIN_SEGMENT_SIZE) {
+				segSize = MIN_SEGMENT_SIZE;
+			}
+			return nextPowerOfTwo(segSize);			
+		}
+		
+		private static float adjustLoadFactor(float factor) {
+			if (factor > MAX_LOAD_THRESHOLD) {
+				factor = MAX_LOAD_THRESHOLD;
+			}
+			if (factor < MIN_LOAD_THRESHOLD) {
+				factor = MIN_LOAD_THRESHOLD;
+			}
+			return factor;
+			
+		}
+		
+		private static int adjustInitSegmentCount(int initSegCount, int maxSegments) {
+			initSegCount = nextPowerOfTwo(initSegCount);
+			if (initSegCount < MIN_INITIAL_SEGMENT_COUNT) {
+				initSegCount = MIN_INITIAL_SEGMENT_COUNT; 
+			} else if (initSegCount > maxSegments) {
+				initSegCount = maxSegments;
+			}
+			return initSegCount;
+		}
+
+		static private int segmentSizeFromExpected(int expectedSize) {
+			if (expectedSize < MIN_INITIAL_CAPACITY) {
+				expectedSize = MIN_INITIAL_CAPACITY;
+			}
+			if (expectedSize > MAX_CAPACITY) {
+				expectedSize = MAX_CAPACITY;
+			}
+			int expected = nextPowerOfTwo(expectedSize);
+
+			int ssize = nextPowerOfTwo((int)Math.sqrt((double) expectedSize));
+			if (ssize < MIN_SEGMENT_SIZE) {
+				ssize = MIN_SEGMENT_SIZE;
+			}
+			return ssize;
+		}
+		
+		static private int initSegmentCountFromCapacity(int segSize, int initCapacity) {
+			if (initCapacity > MAX_CAPACITY) {
+				initCapacity = MAX_CAPACITY;
+			}
+			int isegs = initCapacity / segSize;
+			if (isegs < MIN_INITIAL_SEGMENT_COUNT) {
+				return MIN_INITIAL_SEGMENT_COUNT;
+			}
+			isegs = nextPowerOfTwo(isegs);
+			int maxSegs = MAX_CAPACITY / segSize;
+			if (isegs > maxSegs) {
+				isegs = maxSegs;
+			}
+			return isegs;
+		}
+
+		private int requestedSegmentSize;
+		private boolean requestedSegmentSizeSet;
+		
+		private int requestedInitSegments;
+		private boolean requestedInitSegmentsSet;
+		
+		private int expectedMapSize;
+		private boolean expectedMapSizeSet;
+		
+		private int requestedInitCapacity;
+		private boolean requestedInitCapacitySet;
+		
+		private float requestedLoadFactor;
+		private boolean requestedLoadFactorSet;
+				
+		private MapConfigBuilder() {
+			requestedSegmentSizeSet = false;
+			requestedInitSegmentsSet = false;
+			expectedMapSizeSet = false;
+			requestedInitCapacitySet = false;
+			requestedLoadFactorSet = false;
+		}
+		
+		public MapConfigBuilder withSegmentSize(int segSize) {
+			requestedSegmentSize = segSize;
+			requestedSegmentSizeSet = true;
+			return this;
+		}
+		
+		public MapConfigBuilder withExpectedMapSize(int expectedSize) {
+			expectedMapSize = expectedSize;
+			expectedMapSizeSet = true;
+			return this;
+		}
+		
+		public MapConfigBuilder withInitCapacity(int initCap) {
+			requestedInitCapacity = initCap;
+			requestedInitCapacitySet = true;
+			return this;
+		}
+		
+		public MapConfigBuilder withInitSegmentCount(int segCount) {
+			requestedInitSegments = segCount;
+			requestedInitSegmentsSet = true;
+			return this;
+		}
+		
+		public MapConfigBuilder withLoadFactor(float factor) {
+			requestedLoadFactor = factor;
+			requestedLoadFactorSet = true;
+			return this;
+		}
+		
+		public MapConfig build() {
+			int segmentSize;
+			if (requestedSegmentSizeSet) {
+				segmentSize = adjustSegmentSize(requestedSegmentSize);
+			} else if (expectedMapSizeSet) {
+				segmentSize = segmentSizeFromExpected(expectedMapSize);
+			} else {
+				segmentSize = MIN_SEGMENT_SIZE;
+			}
+			int maxSegments = MAX_CAPACITY / segmentSize;
+
+			int initSegments;
+			if (requestedInitSegmentsSet) {
+				initSegments = adjustInitSegmentCount(requestedInitSegments, maxSegments);
+			} else if (requestedInitCapacitySet) {
+				initSegments = initSegmentCountFromCapacity(segmentSize, requestedInitCapacity);
+			} else {
+				initSegments = MIN_INITIAL_SEGMENT_COUNT;
+			}
+			
+			float loadFactor;
+			if (requestedLoadFactorSet) {
+				loadFactor = adjustLoadFactor(requestedLoadFactor);
+			} else {
+				loadFactor = DEFAULT_LOAD_THRESHOLD;
+			}
+			return new MapConfig(segmentSize, initSegments, maxSegments, loadFactor);
+		}
+		
+		
+	}
+	
+
 
 }
