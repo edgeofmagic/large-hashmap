@@ -37,6 +37,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import org.logicmill.util.concurrent.ConcurrentHashMap.MapConfig;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -86,9 +87,14 @@ public class ConcurrentHashMapTest {
 	 * Runs concurrent put test with 8 threads. If the test system has a larger number of cores, consider increasing
 	 * the thread count.
 	 */
-	@Test
+	@Test	
 	public void testConcurrentPut8() throws SegmentIntegrityException, InterruptedException, ExecutionException {
-		ConcurrentHashMap<ByteArrayKey,Integer> map = new ConcurrentHashMap<ByteArrayKey,Integer>(8192, 8, 0.9f);
+		MapConfig config = MapConfig.create()
+				.withSegmentSize(8192)
+				.withInitSegmentCount(8)
+				.withLoadFactor(0.9f)
+				.build();
+		ConcurrentHashMap<ByteArrayKey,Integer> map = new ConcurrentHashMap<ByteArrayKey,Integer>(config);
 		testConcurrentPut(map, 8, 1000000);
 		printMapStats(map, "testConcurrentPut8");
 	}
@@ -567,6 +573,27 @@ public class ConcurrentHashMapTest {
 	}
 
 	
+	@Test
+	public void testMapConfig() {
+		MapConfig config = MapConfig.create().build();
+		Assert.assertEquals(config.getSegmentSize(), 1024);
+		Assert.assertEquals(config.getInitSegments(), 2);
+		Assert.assertEquals(config.getLoadFactor(), (float) 0.8d, 1e-10d);
+		
+		config = MapConfig.create().withExpectedMapSize(1000000).withInitCapacity(1000).withLoadFactor(0.75f).build();
+		Assert.assertEquals(config.getSegmentSize(), 1024);
+		Assert.assertEquals(config.getInitSegments(), 2);
+		Assert.assertEquals(config.getLoadFactor(), 0.75f, 1e-6);
+		
+		config = MapConfig.create().withExpectedMapSize(100000000).withInitCapacity(1000000).withLoadFactor(2.0f).build();
+		Assert.assertEquals(config.getSegmentSize(), 16384);
+		Assert.assertEquals(config.getInitSegments(), 64);
+		Assert.assertEquals(config.getLoadFactor(), 1.0f, 1e-6);
+		
+		config = MapConfig.create().withExpectedMapSize(1<<28).withInitSegmentCount(1 << 20).build();
+		Assert.assertEquals(config.getSegmentSize(), 1 << 14);
+		Assert.assertEquals(config.getInitSegments(), 1<<16);
+	}
 
 	
 	/*

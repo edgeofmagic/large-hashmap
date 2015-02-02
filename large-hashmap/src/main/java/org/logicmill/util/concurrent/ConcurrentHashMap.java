@@ -37,11 +37,9 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
-//import org.logicmill.util.LargeHashMap;
-//import org.logicmill.util.LongHashable;
 
 /** 
- * A concurrent hash map that scales well to large data sets.
+ * A concurrent hash map that incorporates Extendible Hashing and Hopscotch Hashing.
  * <h3>Concurrency</h3>
  * All operations are thread-safe. Retrieval operations ({@code get}, 
  * {@code containsKey}, and iterator traversal) do not entail locking; they 
@@ -67,14 +65,15 @@ import java.util.Set;
  * map to expand gracefully, amortizing the cost of resizing in constant-sized 
  * increments as the map grows. The map is partitioned into fixed-size 
  * segments. Hash values are mapped to segments through a central directory.
- * When a segment reaches the load factor threshold it splits into two 
+ * When a segment reaches the load factor threshold or insertion failure 
+ * occurs (see Hopscotch Hashing) it splits into two 
  * segments. When a split would exceed directory capacity, the directory 
  * doubles in size. The current implementation does not merge segments to 
  * reduce capacity as entries are removed.
  * <h4>Concurrency during splits and directory expansion</h4>
  * When an update causes a segment to split, the updating thread will acquire
  * a lock on the directory to assign references to the new segments in the 
- * directory. If a split forces the directory to expand, the updating thread 
+ * directory. If a split results in directory expansion, the updating thread 
  * keeps the directory locked during expansion. A directory lock will not block 
  * a concurrent update unless that update forces a segment split. Directory
  * locks do not affect retrievals.
@@ -96,28 +95,64 @@ import java.util.Set;
  * including non-blocking retrieval. This implementation follows the 
  * concurrency strategies described in the originating papers, with minor 
  * variations.
- * <h3>Long Hash Codes</h3>
- * ConcurrentHashMap is designed to support hash maps that can expand to very 
- * large size (> 2<sup>32</sup> items). To that end, it uses 64-bit hash codes.
- * <h4>Hash function requirements</h4>
- * Because segment size is a power of 2, segment indices consist of bit fields
- * extracted directly from hash code values. It is important to choose a hash 
- * function that reliably exhibits avalanche and uniform distribution. An 
- * implementation of Bob Jenkins' SpookyHash V2 algorithm 
- * ({@link org.logicmill.util.hash.SpookyHash} and 
- * {@link org.logicmill.util.hash.SpookyHash64}) is available in conjunction 
- * with ConcurrentHashMap, and is highly recommended.
- * <h4>Key adapters</h4>
- * {@code ConcurrentHashMap} uses key adapters (see {@link 
- * org.logicmill.util.LargeHashMap.KeyAdapter}) to obtain 64-bit hash codes 
- * from keys, and to perform matching comparisons on keys. A reference to a key 
- * adapter implementation can be passed as a parameter to the constructor 
- * {@link #ConcurrentHashMap(int, int, float, LargeHashMap.KeyAdapter)}.
- * {@code ConcurrentHashMap} also provides a default key adapter 
- * implementation that expects keys to implement {@link LongHashable}, and
- * uses {@code Object.equals()} for key matching. The default key adapter
- * is used when the map is constructed with 
- * {@link #ConcurrentHashMap(int, int, float)}.
+ * <h3>Configuration and Performance Considerations</h3>
+ * The map consists of a set of fixed-size segments, accessed through
+ * a directory. As the map grows, segments that reach the load threshold
+ * or experience insertion failure are split, increasing the number of
+ * segments. During a split, the contents of the segment are divided
+ * between the two new segments, requiring re-hashing. If a segment split
+ * would generate segment indices exceeding the directory size, the directory
+ * size is doubled.
+ * <h4>Segmentation considerations</h4>
+ * By judiciously choosing segment size and initial segment count, the 
+ * programmer can make trade-offs that will affect performance. The following
+ * observations should be considered:
+ * <ul>
+ * <li>The initial segment count determines the initial limit of update 
+ * concurrency. As the map expands, so does the opportunity for update 
+ * concurrency.
+ * <li>The cost of a segment split and the duration of the lock when a segment
+ * is being split are proportional to segment size.
+ * <li>Given a constant map growth rate, the frequency of segment splits is 
+ * inversely proportional to segment size.
+ * <li>For a given map size, directory size is inversely proportional 
+ * to segment size.
+ * <li>Given a constant map growth rate, the cost of directory expansion 
+ * doubles each time expansion occurs, but the expected time until the next
+ * expansion also doubles; the aggregate cost of directory expansion remains 
+ * constant, but it is paid in larger increments that happen less frequently.
+ * <li>Doubling the directory is less expensive than splitting a segment of 
+ * the same size. When a directory is doubled, the contents of the directory 
+ * array are simply duplicated into the top half of the new directory. 
+ * Splitting a segment requires insertion into the new segments, which may entail 
+ * collision resolution.
+ * <li>Contention for locks on the directory is not expected to be significant;
+ * most locks (excluding those involving directory expansion) are held only 
+ * briefly (just long enough to assign two references in the directory), and 
+ * directory locks block only updates that force segment splits.</li><p>
+ * </ul>
+ * A proposed rule of thumb for determining segment size: If the expected 
+ * maximum map size is N, set segment size on the order of 
+ * &radic;<span style="text-decoration:overline;">&nbsp;N&nbsp;</span>. This
+ * results in roughly equal segment and directory sizes at expected capacity. 
+ * <p>The implementation forces certain constraints on map configuration:
+ * <ul>
+ * <li>
+ * Segment size must be a power of 2.
+ * </li>
+ * <li>
+ * The minimum segment size is 1024.
+ * </li>
+ * <li>
+ * The minimum number of segments is 2.
+ * </li>
+ * <li>
+ * The maximum capacity of a map is 2<sup>30</sup>.
+ * </li>
+ * </ul>
+ * The implementation imposes these constraints and offers a configuration
+ * facility to interpret programmer statements about configuration to 
+ * ensure 'sane' values for configuration. See {@link MapConfig}.
  * <p id="footnote-1">[1] See 
  * <a href="http://dx.doi.org/10.1145%2F320083.320092"> Fagin, et al, 
  * "Extendible Hashing - A Fast Access Method for Dynamic Files", 
@@ -132,25 +167,16 @@ import java.util.Set;
  * <a href="http://mcg.cs.tau.ac.il/papers/disc2008-hopscotch.pdf">
  * Herlihy, et al, "Hopscotch Hashing", DISC 2008</a>.</p>
  * 
- * @author David Curtis
- * @see LargeHashMap
- * @see org.logicmill.util.hash.SpookyHash
- * @see org.logicmill.util.hash.SpookyHash64
- * 
+ * @author David Curtis 
  *
  * @param <K> type of keys stored in the map
  * @param <V> type of values stored in the map
  */
 public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializable {
-	
-	
-    /**
-	 * 
-	 */
+		
 	private static final long serialVersionUID = -3876715633165576706L;
 
-
-	/**
+	/*
      * Applies a supplemental hash function to a given hashCode, which
      * defends against poor quality hash functions.  This is critical
      * because ConcurrentHashMap uses power-of-two length hash tables,
@@ -169,7 +195,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
     }
 	
 	/*
-	 * Default entry implementation, stores hash codes to avoid repeatedly 
+	 * Entry implementation, stores key hash codes to avoid repeatedly 
 	 * computing them.
 	 */
 	private static class HashEntry<K,V> implements Map.Entry<K, V>, Serializable {
@@ -191,8 +217,8 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 			this(key, value, hash(key.hashCode()));
 		}
 		
-		private HashEntry(Map.Entry<? extends K, ? extends V> e) {
-			this(e.getKey(), e.getValue());
+		private HashEntry(Map.Entry<? extends K, ? extends V> entry) {
+			this(entry.getKey(), entry.getValue());
 		}
 		
 		@Override
@@ -210,7 +236,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 		public boolean equals(Object obj) {
 			if (obj instanceof Map.Entry) {
 				Map.Entry e = (Map.Entry) obj;
-				return key.equals(e.getKey()) && value.equals(e.getValue());
+				return getKey().equals(e.getKey()) && getValue().equals(e.getValue());
 			} else {
 				return false;
 			}
@@ -245,39 +271,22 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 			try {
 				f = this.getClass().getDeclaredField("keyHashCode");
 				f.setAccessible(true);
-				f.setInt(this, hash(key.hashCode()));
+				f.setInt(this, hash(getKey().hashCode()));
 			} catch (NoSuchFieldException | SecurityException | IllegalArgumentException | IllegalAccessException e) {
 				assert false : e.getMessage() + "should never happen";
 			}
 		}
+
 	}
 
-	/*
-	 * Default key adapter. 
-	 */
-/*	private static class DefaultKeyAdapter<K> implements LargeHashMap.KeyAdapter<K> {
-
-		@Override
-		public long getLongHashCode(Object key) {
-			if (key instanceof LongHashable) {
-				return ((LongHashable)key).getLongHashCode();
-			} else {
-				throw new IllegalArgumentException("key must implement org.logicmill.util.LongHashable");
-			}
-		}
-
-		@Override
-		public boolean keyMatches(K mapKey, Object key) {
-			return mapKey.equals(key);
-		}
-	}
-*/	
 	/*
 	 * REGARDING SEGMENT STRUCTURE
 	 * 
 	 * The essential information about a segment's structure is expressed in
 	 * three arrays: buckets, entries, offsets. The arrays are all of length 
 	 * segmentSize.
+	 * 
+	 * BUCKETS
 	 * 
 	 * A bucket is linked list of entries whose hash codes collide at the same
 	 * index in the buckets array. Linked lists are expressed as a sequence of
@@ -290,7 +299,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 	 * 
 	 * 		bucketIndex = (keyHashCode >>> localDepth) & indexMask;  
 	 * 
-	 * where the (& indexMask) is equivalent to (% segmentSize). An offset is
+	 * where the (& indexMask) is equivalent to mod(segmentSize). An offset is
 	 * applied to an index like this:
 	 * 
 	 * 		nextIndex = (bucketIndex + offset) & indexMask;
@@ -320,9 +329,9 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 	 * The timeStamps array is used to implement non-blocking concurrent 
 	 * retrieval. When a get() operation traverses the bucket at 
 	 * buckets[bucketIndex], it compares the value of timeStamps[bucketIndex] 
-	 * before and after the traversal. If the time stamps don't match, the 
-	 * bucket was modified during the traversal, so the traversal must be
-	 * repeated.
+	 * before and after the traversal. If the key wasn't found, and the time 
+	 * stamps don't match, then bucket was modified during the traversal and
+	 * the traversal must be repeated.
 	 */
 	private class Segment {
 		
@@ -367,10 +376,10 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 		private volatile int entryCount;
 		
 		/*
-		 * Prevents an updating thread from modifying a segment
+		 * The invalid flag prevents an updating thread from modifying a segment
 		 * that has already been removed from the directory.
 		 */
-		private boolean invalid;
+		private volatile boolean invalid;
 		
 		private final ReentrantLock lock;
 		
@@ -443,8 +452,9 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 			return sharedBits(hashValue) == sharedBits;	
 		}
 		
-		/* Splits a segment when it reaches the load threshold. Splitting 
-		 * increases localDepth by one, so the new segments have sharedBits 
+		/* Splits a segment when it reaches the load threshold or suffers
+		 * insertion failure. Splitting increases localDepth by one, 
+		 * so the new segments have sharedBits 
 		 * values of (binary) 1??? and 0??? (where ??? is the sharedBits 
 		 * value of the original segment). 
 		 */
@@ -479,6 +489,11 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 			return hashCode & sharedBitsMask;
 		}
 		
+		/*
+		 * Bucket chains are wrapped from the end of the segment
+		 * back to the beginning, if they would otherwise extend beyond
+		 * the end of the segment.
+		 */
 		private int wrapIndex(int unwrappedIndex) {
 			return unwrappedIndex & indexMask;
 		}
@@ -509,7 +524,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 		 * findCloserSlot() constitute the core of the Hopscotch hashing 
 		 * algorithm implementation.
 		 */
-		void placeWithinHopRange(int bucketIndex, HashEntry<K,V> entry) 
+		private void placeWithinHopRange(int bucketIndex, HashEntry<K,V> entry) 
 				throws SegmentOverflowException {
 			int freeSlotOffset = 0;
 			int freeSlotIndex = bucketIndex;
@@ -556,7 +571,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 		 * Tries to move the free slot downward (in direction of decreasing 
 		 * offset) by exchanging it with an entry in another bucket, (very) 
 		 * roughly analogous to an electron hole migrating through a conductor.
-		 * The distance moved be at most HOP_RANGE - 1. Returns either the 
+		 * The distance moved can be at most HOP_RANGE - 1. Returns either the 
 		 * index of the new free slot or NULL_INDEX if none is available.
 		 */
 		private int findCloserSlot(final int freeSlotIndex) {
@@ -638,7 +653,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 		}
 		
 		/*
-		 * Upon invocation, entries[(iBucket+oNode) & indexMask] contains
+		 * Upon invocation, entries[(bucketIndex+entryOffset) & indexMask] contains
 		 * the entry to be inserted into bucket at iBucket. Insert that
 		 * entry into the bucket by adjusting the appropriate offsets.
 		 * 
@@ -646,7 +661,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 		 * can't possibly fail to find an entry that was in the bucket before
 		 * the onset of the retrieval. That can only happen when the retrieval
 		 * is concurrent with a remove, recycle, or free slot migration in 
-		 * findCloserSlot
+		 * findCloserSlot.
 		 */
 		private void insertEntryIntoBucket(int entryOffset, int bucketIndex) {
 			int entryIndex = wrapIndex(bucketIndex + entryOffset);
@@ -665,7 +680,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 			} else {
 				/*
 				 * At least one entry in the bucket precedes the new entry.
-				 * Find oPrev, oNext such that oPrev < oNode < oNext, 
+				 * Find prevOffset, nextOffset such that prevOffset < entryOffset < nextOffset, 
 				 * and adjust offsets to insert the entry into the bucket.
 				 */
 				int prevOffset = firstOffset;
@@ -821,7 +836,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 					}
 					/*
 					 * The key wasn't found. Re-try if the time stamps
-					 * didn't match.
+					 * don't match.
 					 */
 					newTimeStamp = timeStamps.get(bucketIndex);
 					if (newTimeStamp != oldTimeStamp) {
@@ -1070,7 +1085,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 	/*
 	 * Compile-time flag enables data collection.
 	 */
-	static final boolean GATHER_EVENT_DATA = true;
+	private static final boolean GATHER_EVENT_DATA = false;
 	
 	/*
 	 * HOP_RANGE is maximum offset from the bucket index to
@@ -1098,18 +1113,17 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 	private static final int MIN_SEGMENT_SIZE = 1024;
 	private static final int MIN_INITIAL_SEGMENT_COUNT = 2;
 	private static final int MIN_INITIAL_CAPACITY = MIN_SEGMENT_SIZE * MIN_INITIAL_SEGMENT_COUNT;
-	private static final float MIN_LOAD_THRESHOLD = 0.1f;
-	private static final float MAX_LOAD_THRESHOLD = 1.0f;
-	private static final float DEFAULT_LOAD_THRESHOLD = 0.8f;
+	private static final float MIN_LOAD_FACTOR = 0.5f;
+	private static final float MAX_LOAD_FACTOR = 1.0f;
+	private static final float DEFAULT_LOAD_FACTOR = 0.8f;
 	private static final int MAX_SEGMENT_SIZE = MAX_CAPACITY / MIN_INITIAL_SEGMENT_COUNT;
-	private static final int MAX_DIR_SIZE = MAX_CAPACITY / MIN_SEGMENT_SIZE;
 			
 	/*
 	 * initial config values, handled by default serialization
 	 */
 	private final int segmentSize;
-	private final int maxSegmentCount;
-	private final int loadThresholdLimit;
+	private final int maxDirectorySize;
+	private final int loadThreshold;
 	private final int initSegmentCount;
 	
 	/*
@@ -1126,193 +1140,14 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 	/*
 	 * initialize to null
 	 */	
-    private transient Set<K> keySet;
-    private transient Set<Map.Entry<K,V>> entrySet;
-    private transient Collection<V> values;
+    private transient volatile Set<K> keySet;
+    private transient volatile Set<Map.Entry<K,V>> entrySet;
+    private transient volatile Collection<V> values;
 
 	
 	private static class SegmentOverflowException extends Exception {
 		private static final long serialVersionUID = -5917984727339916861L;	
 	}	
-
-//	private final LargeHashMap.KeyAdapter<K> keyAdapter;
-	
-	/** Creates a new, empty map with the specified segment size, initial 
-	 * segment count, load threshold, and key adapter.
-	 * <h4>Segmentation considerations</h4>
-	 * By judiciously choosing segment size and initial segment count, the 
-	 * programmer can make trade-offs that will affect performance. The following
-	 * observations should be considered:
-	 * <ul>
-	 * <li>The initial segment count determines the initial limit of update 
-	 * concurrency. As the map expands, so does the opportunity for update 
-	 * concurrency.
-	 * <li>The cost of a segment split and the duration of the lock on a segment
-	 * being split are proportional to segment size.
-	 * <li>Given a constant map growth rate, the frequency of segment splits is 
-	 * inversely proportional to segment size.
-	 * <li>For a given map size, directory size is inversely proportional 
-	 * to segment size.
-	 * <li>Given a constant map growth rate, the cost of directory expansion 
-	 * doubles each time expansion occurs, but the expected time until the next
-	 * expansion also doubles; the aggregate cost of directory expansion remains 
-	 * constant, but it is paid in larger increments that happen less frequently.
-	 * <li>Doubling the directory is less expensive than splitting a segment of 
-	 * the same size. When a directory is doubled, the contents of the directory 
-	 * array are simply duplicated into the top half of the new directory. 
-	 * Splitting a segment requires insertion into the new segments, which may entail 
-	 * collision resolution.
-	 * <li>Contention for locks on the directory is not expected to be significant;
-	 * most locks (excluding those involving directory expansion) are held only 
-	 * briefly (just long enough to assign two references in the directory), and 
-	 * directory locks block only updates that force segment splits.
-	 * </ul>
-	 * A proposed rule of thumb for determining segment size: If the expected 
-	 * maximum map size is N, set segment size on the order of 
-	 * &radic;<span style="text-decoration:overline;">&nbsp;N&nbsp;</span>. This
-	 * results in roughly equal segment and directory sizes at expected capacity. 
-	 * Note that, if the specified segment size is not a power of two, it will be 
-	 * forced to the next largest power of two.
-	 *  
-	 * @param segSize size of segments, forced to the next largest power of two
-	 * @param initSegCount number of segments created initially
-	 * @param loadThreshold fractional threshold for map growth, observed at 
-	 * the segment level
-	 * @param keyAdapter key adapter to be used by this map instance
-	 * 
-	 * @see org.logicmill.util.LargeHashMap.KeyAdapter
-	 */
-	public ConcurrentHashMap(int segSize, int initSegs, float load) {
-		this(MapConfig.create()
-				.withSegmentSize(segSize)
-				.withInitSegmentCount(initSegs)
-				.withLoadFactor(load).build());
-	}
-	
-	public ConcurrentHashMap(MapConfig config) {
-		maxSegmentCount = config.getMaxSegmentCount();
-		initSegmentCount = config.getInitSegments();
-		segmentSize = config.getSegmentSize();
-		loadThresholdLimit = (int)(((float)segmentSize) * config.getLoadFactor());
-		
-		segmentCount = config.getInitSegments();
-		
-		forcedSplitCount = new AtomicInteger(0);
-		thresholdSplitCount = new AtomicInteger(0);
-		segmentSerialID = new AtomicInteger(0);
-		int dirSize = segmentCount;
-		int dirMask = dirSize - 1;
-		int depth = Integer.bitCount(dirMask);
-		AtomicReferenceArray<Segment> dir = 
-				new AtomicReferenceArray<Segment>(segmentCount);
-		for (int i = 0; i < segmentCount; i++) {
-			dir.set(i, new Segment(depth, i));
-		}
-		dirLock = new ReentrantLock(true);
-		directory = new AtomicReference<AtomicReferenceArray<Segment>>(dir);
-		mapEntryCount = new AtomicInteger(0);		
-		
-	}
-	
-
-	/** Creates a new, empty map with the specified segment size, initial 
-	 * segment count, load threshold, and a default key adapter 
-	 * implementation (see {@link 
-	 * #ConcurrentHashMap(int, int, float, LargeHashMap.KeyAdapter)} for
-	 * a discussion of segmentation issues).
-	 * <h4>Default key adapter</h4>
-	 * The default key adapter implementation expects key objects to implement
-	 * {@link LongHashable}. Specifically:
-	 * <ul>
-	 * <li> If the key can be cast to {@link LongHashable}, the default
-	 * key adapter implementation of {@code getLongHashCode()} returns {@code 
-	 * ((LongHashable)key).getLongHashCode()}. Otherwise, a
-	 * {@code ClassCastException} is thrown.
-	 * <li> The default key adapter implementation of 
-	 * {@code keyMatches(K mappedKey, Object key)} delegates to {@code
-	 * mappedKey.equals(key)}.
-	 * </ul>
-	 * @param segSize size of segments, forced to the next largest power of two
-	 * @param initSegCount number of segments created initially
-	 * @param loadThreshold fractional threshold for map growth, observed at 
-	 * the segment level
-	 */
-/*	public ConcurrentHashMap(int segSize, int initSegCount, float loadThreshold) {
-		this(segSize, initSegCount, loadThreshold, new DefaultKeyAdapter<K>());
-	}
-*/
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public V putIfAbsent(K key, V value) {
-		if (key == null || value == null) {
-			throw new NullPointerException();
-		}
-		return put(key, value, false);
-	}
-	
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public V put(K key, V value) {
-		if (key == null || value == null) {
-			throw new NullPointerException();
-		}
-		return put(key, value, true);
-	}
-	
-	/*
-	 * should only be invoked during de-serialization, so it doesn't
-	 * try to accommodate concurrency.
-	 */
-	private void put(HashEntry<K,V> entry) {
-		AtomicReferenceArray<Segment> dir = directory.get();
-		int dirSize = dir.length();
-		int dirMask = dirSize - 1;
-		int hashCode = entry.getKeyHashCode();
-		int segmentIndex = hashCode & dirMask;
-		Segment seg = dir.get(segmentIndex);
-
-		if (seg.entryCount < loadThresholdLimit) {
-			try {
-				seg.put(entry);
-				return;
-			} catch (SegmentOverflowException soe) {
-				if (GATHER_EVENT_DATA) {
-					forcedSplitCount.incrementAndGet();
-				}
-			}
-		} else {
-			if (GATHER_EVENT_DATA) {
-				thresholdSplitCount.incrementAndGet();
-			}
-		}
-		/*
-		 * Either load factor was exceeded or the insertion threw 
-		 * an overflow exception; split the segment.
-		 */
-		seg.invalid = true; // probably unnecessary
-		Segment[] split = seg.split();
-		if (GATHER_EVENT_DATA) {
-			split[0].copyMetrics(seg);
-		}
-		V result;
-		try {
-			if (split[0].sharedBitsMatchSegment(hashCode)) {
-				split[0].put(entry);
-			} else if (split[1].sharedBitsMatchSegment(hashCode)) {
-				split[1].put(entry);
-			} else {
-				throw new IllegalStateException("sharedBits conflict during segment split");
-			}
-		}
-		catch (SegmentOverflowException soe1) {
-			throw new IllegalStateException("sgement overflow occured after split");
-		}
-		updateDirectoryOnSplit(split);		
-	}
 	
 	private V put(K key, V value, boolean replaceIfPresent) {
 		retry:
@@ -1332,7 +1167,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 				/*
 				 * try block encloses the segment lock; unlock is in the finally block
 				 */
-				if (seg.entryCount < loadThresholdLimit) {
+				if (seg.entryCount < loadThreshold) {
 					try {
 						return seg.put(key, value, hashCode, replaceIfPresent);
 					} catch (SegmentOverflowException soe) {
@@ -1392,7 +1227,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 				 * double directory size
 				 */
 				int newDirSize = dirSize * 2;
-				if (newDirSize > MAX_DIR_SIZE) {
+				if (newDirSize > maxDirectorySize) {
 					throw new IllegalStateException("directory size limit exceeded");
 				}
 				AtomicReferenceArray<Segment> newDirectory = 
@@ -1421,46 +1256,54 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 
 	}
 	
-	/**
-	 * {@inheritDoc}
+	/*
+	 * Only invoked during de-serialization, so it doesn't
+	 * try to accommodate concurrency.
 	 */
-	@Override
-	public V get(Object key) {
-		if (key == null) {
-			throw new NullPointerException();
-		}
+	private void put(HashEntry<K,V> entry) {
 		AtomicReferenceArray<Segment> dir = directory.get();
-		int dirMask = dir.length() - 1;
-		int hashCode = hash(key.hashCode());
-		Segment seg = dir.get(hashCode & dirMask);
-		return seg.get(key, hashCode);
-	}
-	
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public V remove(Object key) {
-		if (key == null) {
-			throw new NullPointerException();
-		}
-		int hashValue = hash(key.hashCode());
-		while (true) {
-			AtomicReferenceArray<Segment> dir = directory.get();
-			int dirSize = dir.length();
-			int dirMask = dirSize - 1;
-			int segmentIndex = hashValue & dirMask;
-			Segment seg = dir.get(segmentIndex);
-			seg.lock.lock();
+		int dirSize = dir.length();
+		int dirMask = dirSize - 1;
+		int hashCode = entry.getKeyHashCode();
+		int segmentIndex = hashCode & dirMask;
+		Segment seg = dir.get(segmentIndex);
+
+		if (seg.entryCount < loadThreshold) {
 			try {
-				if (!seg.invalid) {
-					return seg.remove(key, hashValue, null);	
+				seg.put(entry);
+				return;
+			} catch (SegmentOverflowException soe) {
+				if (GATHER_EVENT_DATA) {
+					forcedSplitCount.incrementAndGet();
 				}
 			}
-			finally {
-				seg.lock.unlock();
+		} else {
+			if (GATHER_EVENT_DATA) {
+				thresholdSplitCount.incrementAndGet();
 			}
 		}
+		/*
+		 * Either load factor was exceeded or the insertion threw 
+		 * an overflow exception; split the segment.
+		 */
+		seg.invalid = true; // probably unnecessary
+		Segment[] split = seg.split();
+		if (GATHER_EVENT_DATA) {
+			split[0].copyMetrics(seg);
+		}
+		try {
+			if (split[0].sharedBitsMatchSegment(hashCode)) {
+				split[0].put(entry);
+			} else if (split[1].sharedBitsMatchSegment(hashCode)) {
+				split[1].put(entry);
+			} else {
+				throw new IllegalStateException("sharedBits conflict during segment split");
+			}
+		}
+		catch (SegmentOverflowException soe1) {
+			throw new IllegalStateException("sgement overflow occured after split");
+		}
+		updateDirectoryOnSplit(split);		
 	}
 	
 	/*
@@ -1546,8 +1389,17 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 			}
 		}		
 	}
-			
-	private class HashEntryIterator implements Iterator<HashEntry<K,V>> {
+	
+	
+	private Iterator<Map.Entry<K,V>> getEntryIterator() {
+		return new HashEntryIterator();
+	}
+	
+	/*
+	 * The basis for all of the iterators provided by the map -- keySet().iterator(), 
+	 * values().iterator(), and entrySet().iterator().
+	 */
+	private class HashEntryIterator implements Iterator<Entry<K,V>>, Enumeration<Map.Entry<K, V>>{
 		
 		private final SegmentIterator segIter;
 		private Segment currentSegment;
@@ -1621,39 +1473,378 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 				ConcurrentHashMap.this.remove(lastEntry.getKey());
 				lastEntry = null;
 			}
+		}
+
+		@Override
+		public boolean hasMoreElements() {
+			return hasNext();
+		}
+
+		@Override
+		public java.util.Map.Entry<K, V> nextElement() {
+			return next();
 		}		
 
 	}
+
+	/*
+	 * Returned by keySet().iterator()
+	 */
+    private final class KeyIterator
+        implements Iterator<K>, Enumeration<K>
+    {
+    	private final Iterator<Entry<K,V>> entryIter;
+    	
+    	private KeyIterator() {
+    		entryIter = getEntryIterator();
+    	}
+
+		@Override
+		public boolean hasMoreElements() {
+			return hasNext();
+		}
+
+		@Override
+		public K nextElement() {
+			return next();
+		}
+
+		@Override
+		public boolean hasNext() {
+			return entryIter.hasNext();
+		}
+
+		@Override
+		public K next() {
+			return entryIter.next().getKey();
+		}
+
+		@Override
+		public void remove() {
+			entryIter.remove();
+		}
+    }
+
+    /*
+     * returned by values().iterator();
+     */
+    private final class ValueIterator
+    	implements Iterator<V>, Enumeration<V> {
+
+    	private final Iterator<Entry<K,V>> entryIter;
+
+    	private ValueIterator() {
+    		entryIter = getEntryIterator();
+    	}
+    	
+		@Override
+		public boolean hasMoreElements() {
+			return hasNext();
+		}
+
+		@Override
+		public V nextElement() {
+			return next();
+		}
+
+		@Override
+		public boolean hasNext() {
+			return entryIter.hasNext();
+		}
+
+		@Override
+		public V next() {
+			return entryIter.next().getValue();
+		}
+
+		@Override
+		public void remove() {
+			entryIter.remove();
+		}
+    	
+    }
+	
+    /*
+     * An instance of this class is returned by keySet()
+     */
+    private final class KeySet extends AbstractSet<K> {
+        public Iterator<K> iterator() {
+            return new KeyIterator();
+        }
+        public int size() {
+            return ConcurrentHashMap.this.size();
+        }
+        public boolean isEmpty() {
+            return ConcurrentHashMap.this.isEmpty();
+        }
+        public boolean contains(Object o) {
+            return ConcurrentHashMap.this.containsKey(o);
+        }
+        public boolean remove(Object o) {
+            return ConcurrentHashMap.this.remove(o) != null;
+        }
+        public void clear() {
+            ConcurrentHashMap.this.clear();
+        }
+    }
+    
+    /*
+     * An instance of this class is returned by values()
+     */
+    private final class Values extends AbstractCollection<V> {
+        public Iterator<V> iterator() {
+            return new ValueIterator();
+        }
+        public int size() {
+            return ConcurrentHashMap.this.size();
+        }
+        public boolean isEmpty() {
+            return ConcurrentHashMap.this.isEmpty();
+        }
+        public boolean contains(Object o) {
+            return ConcurrentHashMap.this.containsValue(o);
+        }
+        public void clear() {
+            ConcurrentHashMap.this.clear();
+        }
+    }
+
+    /*
+     * An instance of this class is returned by entrySet()
+     */
+    private final class EntrySet extends AbstractSet<Map.Entry<K,V>> {
+        public Iterator<Map.Entry<K,V>> iterator() {
+            return getEntryIterator();
+        }
+        public boolean contains(Object obj) {
+            if (!(obj instanceof Map.Entry))
+                return false;
+            Map.Entry<?,?> entry = (Map.Entry<?,?>)obj;
+            V value = ConcurrentHashMap.this.get(entry.getKey());
+            return value != null && value.equals(entry.getValue());
+        }
+        public boolean remove(Object obj) {
+            if (!(obj instanceof Map.Entry))
+                return false;
+            Map.Entry<?,?> entry = (Map.Entry<?,?>)obj;
+            return ConcurrentHashMap.this.remove(entry.getKey(), entry.getValue());
+        }
+        public int size() {
+            return ConcurrentHashMap.this.size();
+        }
+        public boolean isEmpty() {
+            return ConcurrentHashMap.this.isEmpty();
+        }
+        public void clear() {
+            ConcurrentHashMap.this.clear();
+        }
+    }
+
+	private void writeObject(ObjectOutputStream os) throws IOException {
+		os.defaultWriteObject();
+		Iterator<Entry<K,V>> iter = getEntryIterator();
+		while (iter.hasNext()) {
+			os.writeObject(iter.next());
+		}
+		os.writeObject(null);
+	}
+	
+	private void readObject(ObjectInputStream is) throws IOException, ClassNotFoundException {
+		is.defaultReadObject();
+		/*
+		 * Uses reflection to initialize final members
+		 */
+		Field field;
+		try {
+			@SuppressWarnings("rawtypes")
+			Class<? extends ConcurrentHashMap> clazz = this.getClass();
+			field = clazz.getDeclaredField("segmentCount");
+			field.setAccessible(true);
+			field.setInt(this, initSegmentCount);
+			
+			field = clazz.getDeclaredField("forcedSplitCount");
+			field.setAccessible(true);
+			field.set(this, new AtomicInteger(0));
+			
+			field = clazz.getDeclaredField("thresholdSplitCount");
+			field.setAccessible(true);
+			field.set(this, new AtomicInteger(0));
+			
+			field = clazz.getDeclaredField("segmentSerialID");
+			field.setAccessible(true);
+			field.set(this, new AtomicInteger(0));
+			
+			field = clazz.getDeclaredField("mapEntryCount");
+			field.setAccessible(true);
+			field.set(this, new AtomicInteger(0));
+			
+			field = clazz.getDeclaredField("dirLock");
+			field.setAccessible(true);
+			field.set(this, new ReentrantLock(true));
+			
+			int dirSize = segmentCount;
+			int dirMask = dirSize - 1;
+			int depth = Integer.bitCount(dirMask);
+			AtomicReferenceArray<Segment> dir = 
+					new AtomicReferenceArray<Segment>(segmentCount);
+			for (int i = 0; i < segmentCount; i++) {
+				dir.set(i, new Segment(depth, i));
+			}
+			
+			field = clazz.getDeclaredField("directory");
+			field.setAccessible(true);
+			field.set(this, new AtomicReference<AtomicReferenceArray<Segment>>(dir));
+			
+		} catch (NoSuchFieldException | SecurityException | IllegalArgumentException | IllegalAccessException e) {
+			assert false : e.getMessage() + "should never happen";
+		}
+		
+		while (true) {
+			@SuppressWarnings("unchecked")
+			HashEntry<K,V> entry = (HashEntry<K,V>) is.readObject();
+			if (entry == null) {
+				break;
+			}
+			put(entry);
+		}	
+	}
+
+	
+	
+	/*
+	 * Creates a new, empty map with the specified segment size, initial 
+	 * segment count, load threshold, and a default key adapter 
+	 * implementation (see {@link 
+	 * #ConcurrentHashMap(int, int, float, LargeHashMap.KeyAdapter)} for
+	 * a discussion of segmentation issues).
+	 * <h4>Default key adapter</h4>
+	 * The default key adapter implementation expects key objects to implement
+	 * {@link LongHashable}. Specifically:
+	 * <ul>
+	 * <li> If the key can be cast to {@link LongHashable}, the default
+	 * key adapter implementation of {@code getLongHashCode()} returns {@code 
+	 * ((LongHashable)key).getLongHashCode()}. Otherwise, a
+	 * {@code ClassCastException} is thrown.
+	 * <li> The default key adapter implementation of 
+	 * {@code keyMatches(K mappedKey, Object key)} delegates to {@code
+	 * mappedKey.equals(key)}.
+	 * </ul>
+	 * @param segSize size of segments, forced to the next largest power of two
+	 * @param initSegCount number of segments created initially
+	 * @param loadThreshold fractional threshold for map growth, observed at 
+	 * the segment level
+	 */
+
 	
 	
 	/**
-	 * {@inheritDoc}
+	 * Creates a new, empty map using the suggestions provided for segment size, 
+	 * initial segment count, and load factor. <i>Suggested</i> values may be
+	 * adjusted to meet constraints as described below. See the notes for this
+	 * class for a discussion of configuration and performance considerations.<p>
+	 * This constructor is the equivalent of the following:
+	 * <code><pre>
+	 * new ConcurrentHashMap(MapConfig.create()
+	 * 		.withSegmentSize(segSize)
+	 *		.withInitSegmentCount(initSegCount)
+	 *		.withLoadFactor(factor));
+	 * </pre></code>
+	 * The value of {@code segSize} is adjusted such that:<p>
+	 * <code>
+	 * &nbsp;&nbsp;&nbsp;segSize<sub>adjusted</sub> = 2<sup>
+	 * <sup><font size=4>&lceil;</font></sup>log<sub>2</sub>
+	 * (segSize)<sup><font size=4>&rceil;</font></sup>
+	 * </sup></code><p>
+	 * that is, to the smallest power of 2 greater than
+	 * or equal to segSize, and further adjusted if necessary so that it 
+	 * lies in the range <code>[1024..2<sup>29</sup>]</code>, inclusive.
+	 * The value of {@code initSegCount} is adjusted, such that<p> 
+	 * <code>
+	 * &nbsp;&nbsp;&nbsp;initSegCount<sub>adjusted</sub> = 2<sup>
+	 * <sup><font size=4>&lceil;</font></sup>log<sub>2</sub>
+	 * (initSegCount)<sup><font size=4>&rceil;</font></sup>
+	 * </sup><p>
+	 * </code>
+	 * <p>that is, to the smallest power of 2 greater than
+	 * or equal to initSegCount, and further adjusted if necessary 
+	 * so that it lies in the range {@code [2..n]} inclusive, where<p>
+	 * <code>
+	 * &nbsp;&nbsp;&nbsp;n = 2<sup>30</sup>/segSize<sub>adjusted</sub></code><p> 
+ 	 * The value of {@code loadFactor} is adjusted if necessary 
+ 	 * so that it lies in the range {@code [0.5, 1.0]}, inclusive.
+ 	 * 
+	 * @param segSize suggested size of segments, to be adjusted 
+	 * as necessary to fit constraints
+	 * @param initSegCount suggested number of initial segments, 
+	 * to be adjusted as necessary to fit constraints
+	 * @param loadFactor suggested load factor fractional for map growth
+	 * 
+	 * @see MapConfig
 	 */
-	public Iterator<HashEntry<K,V>> getHashEntryIterator() {
-		return new HashEntryIterator();
+	public ConcurrentHashMap(int segSize, int initSegCount, float loadFactor) {
+		this(MapConfig.create()
+				.withSegmentSize(segSize)
+				.withInitSegmentCount(initSegCount)
+				.withLoadFactor(loadFactor).build());
 	}
+	
+	/** Creates a new, empty map with default values for segment size (1024), initial segment count (2), and 
+	 * load factor (0.8).
+	 * 
+	 */
+	public ConcurrentHashMap() {
+		this(MapConfig.create().build());
+	}
+	
+	/** Creates a new, empty map with values provided by {@code config}.
+	 * @param config MapConfig object that specifies the configuration of the map to be created
+	 * @see MapConfig
+	 */
+	public ConcurrentHashMap(MapConfig config) {
+		maxDirectorySize = config.getMaxSegmentCount();
+		initSegmentCount = config.getInitSegments();
+		segmentSize = config.getSegmentSize();
+		loadThreshold = (int)(((float)segmentSize) * config.getLoadFactor());
+		
+		segmentCount = config.getInitSegments();
+		
+		forcedSplitCount = new AtomicInteger(0);
+		thresholdSplitCount = new AtomicInteger(0);
+		segmentSerialID = new AtomicInteger(0);
+		int dirSize = segmentCount;
+		int dirMask = dirSize - 1;
+		int depth = Integer.bitCount(dirMask);
+		AtomicReferenceArray<Segment> dir = 
+				new AtomicReferenceArray<Segment>(segmentCount);
+		for (int i = 0; i < segmentCount; i++) {
+			dir.set(i, new Segment(depth, i));
+		}
+		dirLock = new ReentrantLock(true);
+		directory = new AtomicReference<AtomicReferenceArray<Segment>>(dir);
+		mapEntryCount = new AtomicInteger(0);		
+		
+	}
+	
 
+
+	
+	/*************************************************************************
+	 * 
+	 * Methods inherited from ConcurrentMap
+	 * 
+	 ************************************************************************/
+	
 	/**
 	 * {@inheritDoc}
 	 */
 	@Override
-	public int size() {
-		return mapEntryCount.get();
-	}
-
-
-	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	public boolean containsKey(Object key) {
-		if (key == null) {
+	public V putIfAbsent(K key, V value) {
+		if (key == null || value == null) {
 			throw new NullPointerException();
 		}
-		return get(key) != null;
+		return put(key, value, false);
 	}
-
-
+	
 	/**
 	 * {@inheritDoc}
 	 */
@@ -1680,7 +1871,6 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 			}
 		}
 	}
-
 
 	/**
 	 * {@inheritDoc}
@@ -1736,19 +1926,164 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 	}
 
 
+	
+	/*************************************************************************
+	 * 
+	 * Methods inherited Map
+	 * 
+	 ************************************************************************/
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public V put(K key, V value) {
+		if (key == null || value == null) {
+			throw new NullPointerException();
+		}
+		return put(key, value, true);
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public V get(Object key) {
+		if (key == null) {
+			throw new NullPointerException();
+		}
+		AtomicReferenceArray<Segment> dir = directory.get();
+		int dirMask = dir.length() - 1;
+		int hashCode = hash(key.hashCode());
+		Segment seg = dir.get(hashCode & dirMask);
+		return seg.get(key, hashCode);
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public V remove(Object key) {
+		if (key == null) {
+			throw new NullPointerException();
+		}
+		int hashValue = hash(key.hashCode());
+		while (true) {
+			AtomicReferenceArray<Segment> dir = directory.get();
+			int dirSize = dir.length();
+			int dirMask = dirSize - 1;
+			int segmentIndex = hashValue & dirMask;
+			Segment seg = dir.get(segmentIndex);
+			seg.lock.lock();
+			try {
+				if (!seg.invalid) {
+					return seg.remove(key, hashValue, null);	
+				}
+			}
+			finally {
+				seg.lock.unlock();
+			}
+		}
+	}
+	
+
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public int size() {
+		return mapEntryCount.get();
+	}
+
+
+	/**
+	 * {@inheritDoc}
+	 */
+	
+	/*
+	 * Overrides AbstractMap implementation to prohibit
+	 * null key.
+	 */	
+	@Override
+	public boolean containsKey(Object key) {
+		if (key == null) {
+			throw new NullPointerException();
+		}
+		return get(key) != null;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public boolean containsValue(Object value) {
+		if (value == null) {
+			throw new NullPointerException();
+		}
+		Iterator<Map.Entry<K,V>> i = entrySet.iterator();
+		while (i.hasNext()) {
+			if (i.next().getValue().equals(value)) {
+				return true;
+			}
+		}
+		return false;
+
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void clear() {
+		Iterator<? extends Entry<K,V>> iter = getEntryIterator();
+		while (iter.hasNext()) {
+			iter.next();
+			iter.remove();
+		}
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public Set<K> keySet() {
+        Set<K> ks = keySet;
+        return (ks != null) ? ks : (keySet = new KeySet());
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public Collection<V> values() {
+        Collection<V> vs = values;
+        return (vs != null) ? vs : (values = new Values());
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+    public Set<Map.Entry<K,V>> entrySet() {
+        Set<Map.Entry<K,V>> es = entrySet;
+        return (es != null) ? es : (entrySet = new EntrySet());
+    }
+	
+
 	/**
 	 * {@inheritDoc}
 	 */
 	@Override
 	public boolean isEmpty() {
-		return mapEntryCount.get() == 0L;
+		return size() == 0;
 	}
 
-	@Override
-	public boolean containsValue(Object value) {
-		return get(value) != null;
-	}
-
+	
+	
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public void putAll(Map<? extends K, ? extends V> m) {
 		for (Map.Entry<? extends K, ? extends V> e : m.entrySet()) {
@@ -1756,193 +2091,18 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 		}
 	}
 
-	@Override
-	public void clear() {
-		HashEntryIterator iter = new HashEntryIterator();
-		while (iter.hasNext()) {
-			iter.next();
-			iter.remove();
-		}
-	}
-
-	final class EntryIterator
-	implements Iterator<Entry<K,V>>
-	{
-		private HashEntryIterator iter = new HashEntryIterator();
-
-		public Map.Entry<K,V> next() {
-			return iter.next();
-		}
-
-		@Override
-		public boolean hasNext() {
-			return iter.hasNext();
-		}
-
-		@Override
-		public void remove() {
-			iter.remove();
-		}
-	}
-
-    final class KeyIterator
-        implements Iterator<K>, Enumeration<K>
-    {
-    	private final HashEntryIterator entryIter;
-    	
-    	private KeyIterator() {
-    		entryIter = new HashEntryIterator();
-    	}
-
-		@Override
-		public boolean hasMoreElements() {
-			return hasNext();
-		}
-
-		@Override
-		public K nextElement() {
-			return next();
-		}
-
-		@Override
-		public boolean hasNext() {
-			return entryIter.hasNext();
-		}
-
-		@Override
-		public K next() {
-			return entryIter.next().getKey();
-		}
-
-		@Override
-		public void remove() {
-			entryIter.remove();
-		}
-    }
-
-    final class ValueIterator
-    	implements Iterator<V>, Enumeration<V> {
-
-    	private final HashEntryIterator entryIter;
-
-    	private ValueIterator() {
-    		entryIter = new HashEntryIterator();
-    	}
-    	
-		@Override
-		public boolean hasMoreElements() {
-			return hasNext();
-		}
-
-		@Override
-		public V nextElement() {
-			return next();
-		}
-
-		@Override
-		public boolean hasNext() {
-			return entryIter.hasNext();
-		}
-
-		@Override
-		public V next() {
-			return entryIter.next().getValue();
-		}
-
-		@Override
-		public void remove() {
-			entryIter.remove();
-		}
-    	
-    }
-	
-    final class KeySet extends AbstractSet<K> {
-        public Iterator<K> iterator() {
-            return new KeyIterator();
-        }
-        public int size() {
-            return ConcurrentHashMap.this.size();
-        }
-        public boolean isEmpty() {
-            return ConcurrentHashMap.this.isEmpty();
-        }
-        public boolean contains(Object o) {
-            return ConcurrentHashMap.this.containsKey(o);
-        }
-        public boolean remove(Object o) {
-            return ConcurrentHashMap.this.remove(o) != null;
-        }
-        public void clear() {
-            ConcurrentHashMap.this.clear();
-        }
-    }
-    
-    final class Values extends AbstractCollection<V> {
-        public Iterator<V> iterator() {
-            return new ValueIterator();
-        }
-        public int size() {
-            return ConcurrentHashMap.this.size();
-        }
-        public boolean isEmpty() {
-            return ConcurrentHashMap.this.isEmpty();
-        }
-        public boolean contains(Object o) {
-            return ConcurrentHashMap.this.containsValue(o);
-        }
-        public void clear() {
-            ConcurrentHashMap.this.clear();
-        }
-    }
-
-
-    final class EntrySet extends AbstractSet<Map.Entry<K,V>> {
-        public Iterator<Map.Entry<K,V>> iterator() {
-            return new EntryIterator();
-        }
-        public boolean contains(Object o) {
-            if (!(o instanceof Map.Entry))
-                return false;
-            Map.Entry<?,?> e = (Map.Entry<?,?>)o;
-            V v = ConcurrentHashMap.this.get(e.getKey());
-            return v != null && v.equals(e.getValue());
-        }
-        public boolean remove(Object o) {
-            if (!(o instanceof Map.Entry))
-                return false;
-            Map.Entry<?,?> e = (Map.Entry<?,?>)o;
-            return ConcurrentHashMap.this.remove(e.getKey(), e.getValue());
-        }
-        public int size() {
-            return ConcurrentHashMap.this.size();
-        }
-        public boolean isEmpty() {
-            return ConcurrentHashMap.this.isEmpty();
-        }
-        public void clear() {
-            ConcurrentHashMap.this.clear();
-        }
-    }
 
 	
-	@Override
-	public Set<K> keySet() {
-        Set<K> ks = keySet;
-        return (ks != null) ? ks : (keySet = new KeySet());
-	}
-
-	@Override
-	public Collection<V> values() {
-        Collection<V> vs = values;
-        return (vs != null) ? vs : (values = new Values());
-	}
-
-	@Override
-    public Set<Map.Entry<K,V>> entrySet() {
-        Set<Map.Entry<K,V>> es = entrySet;
-        return (es != null) ? es : (entrySet = new EntrySet());
-    }
 	
+	/*************************************************************************
+	 * 
+	 * Methods inherited from Object
+	 * 
+	 ************************************************************************/
+	
+	/**
+	 * {@inheritDoc}
+	 */	
 	@Override 
     public String toString() {
         Iterator<Entry<K,V>> i = entrySet().iterator();
@@ -1964,16 +2124,22 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
         }
     }
 	
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public int hashCode() {
 		int h = 0;
-		Iterator<HashEntry<K,V>> i = getHashEntryIterator();
+		Iterator<Entry<K,V>> i = entrySet.iterator();
 		while (i.hasNext()) {
 			h += i.next().hashCode();
 		}
 		return h;
 	}
-	
+
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public boolean equals(Object obj) {
 		if (obj == this) {
@@ -1982,6 +2148,7 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 		if (!(obj instanceof Map)) {
 			return false;
 		}
+		@SuppressWarnings("unchecked")
 		Map<K,V> m = (Map<K,V>) obj;
 		if (m.size() != size()) {
 			return false;
@@ -2005,107 +2172,99 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 		}
 		return true;
 	}
-	
-	private void writeObject(ObjectOutputStream s) throws IOException {
-		s.defaultWriteObject();
-		Iterator<HashEntry<K,V>> iter = getHashEntryIterator();
-		while (iter.hasNext()) {
-			s.writeObject(iter.next());
-		}
-		s.writeObject(null);
-	}
-	
-	private void readObject(ObjectInputStream s) throws IOException, ClassNotFoundException {
-		s.defaultReadObject();
-		
-		Field f;
-		try {
-			Class<? extends ConcurrentHashMap> clazz = this.getClass();
-			f = clazz.getDeclaredField("segmentCount");
-			f.setAccessible(true);
-			f.setInt(this, initSegmentCount);
-			
-			f = clazz.getDeclaredField("forcedSplitCount");
-			f.setAccessible(true);
-			f.set(this, new AtomicInteger(0));
-			
-			f = clazz.getDeclaredField("thresholdSplitCount");
-			f.setAccessible(true);
-			f.set(this, new AtomicInteger(0));
-			
-			f = clazz.getDeclaredField("segmentSerialID");
-			f.setAccessible(true);
-			f.set(this, new AtomicInteger(0));
-			
-			f = clazz.getDeclaredField("mapEntryCount");
-			f.setAccessible(true);
-			f.set(this, new AtomicInteger(0));
-			
-			f = clazz.getDeclaredField("dirLock");
-			f.setAccessible(true);
-			f.set(this, new ReentrantLock(true));
-			
-			int dirSize = segmentCount;
-			int dirMask = dirSize - 1;
-			int depth = Integer.bitCount(dirMask);
-			AtomicReferenceArray<Segment> dir = 
-					new AtomicReferenceArray<Segment>(segmentCount);
-			for (int i = 0; i < segmentCount; i++) {
-				dir.set(i, new Segment(depth, i));
-			}
-			
-			f = clazz.getDeclaredField("directory");
-			f.setAccessible(true);
-			f.set(this, new AtomicReference<AtomicReferenceArray<Segment>>(dir));
-			
-		} catch (NoSuchFieldException | SecurityException | IllegalArgumentException | IllegalAccessException e) {
-			assert false : e.getMessage() + "should never happen";
-		}
-		
-		while (true) {
-			HashEntry<K,V> entry = (HashEntry<K,V>) s.readObject();
-			if (entry == null) {
-				break;
-			}
-			put(entry);
-		}	
-	}
-	
-	
-	// TODO: implement serialization, equals, hashCode clone?
-	
-	public static class MapConfig {
-		private final int segmentSize;
-		private final int initSegments;
-		private final int maxSegmentCount;
-		private final float loadFactor;
-		private MapConfig(int segSize, int initSegs, int maxSegs, float factor) {
-			segmentSize = segSize;
-			initSegments = initSegs;
-			maxSegmentCount = maxSegs;
-			loadFactor = factor;
-		}
-		public int getSegmentSize() {
-			return segmentSize;
-		}
-		public int getInitSegments() {
-			return initSegments;
-		}
-		public int getMaxSegmentCount() {
-			return maxSegmentCount;
-		}	
-		public float getLoadFactor() {
-			return loadFactor;
-		}
-		public static MapConfigBuilder create() {
-			return new MapConfigBuilder();
-		}
 
+	
+	/*************************************************************************
+	 * 
+	 * MapConfig utility
+	 * 
+	 ************************************************************************/
+	
+	/** An object returned by {@code withLoadFactor()}. This interface constrains
+	 * operations to ensure proper ordering of invocations in a {@code MapConfig} chain,
+	 * supporting the {@code build()} method that terminates the chain. 
+	 * @author edgeofmagic
+	 *
+	 */
+	public interface Buildable {
+		
+		/** Creates a MapConfig with the parameters specified by a chain of 
+		 * invocations on intermediate helper objects.
+		 * @return MapConfig object suitable for constructing a map
+		 */
+		MapConfig build();
+	}
+		
+	/** An object that creates a MapConfig. An object
+	 * implementing this interface is returned by static
+	 * {@code MapConfig.create()}, and serves as the anchor
+	 * of a chain of invocations that populate it with
+	 * data describing the configuration.
+	 * @author edgeofmagic
+	 *
+	 */
+	public interface MapConfigBuilder extends SegCountSpec {
+		/** Indicates a suggested segment size for this configuration.
+		 * The value of {@code size} is adjusted such that:<p>
+		 * <code>
+		 * &nbsp;&nbsp;&nbsp;size<sub>adjusted</sub> = 2<sup>
+		 * <sup><font size=4>&lceil;</font></sup>log<sub>2</sub>
+		 * (size)<sup><font size=4>&rceil;</font></sup>
+		 * </sup></code><p>
+		 * that is, to the smallest power of 2 greater than
+		 * or equal to {@code size}, and further adjusted if necessary so that it 
+		 * lies in the range <code>[1024..2<sup>29</sup>]</code>, inclusive.
+		 *  
+		 * @param size suggested segment size
+		 * @return object that constrains the subsequent operations in the chain to ensure proper 
+		 * invocation order
+		 */
+		SegCountSpec withSegmentSize(int size);
+
+		/** Indicates the expected nominal size of a map of this configuration
+		 * in the intended application context. Expected map size is used to 
+		 * determine segment size, such that:<p>
+		 * <code>
+		 * &nbsp;&nbsp;&nbsp;segSize<sub>estimated</sub> = 
+		 * &radic;<span style="text-decoration:overline;" > &nbsp;estimatedMapSize&nbsp;</span></code><p>
+		 * <code>
+		 * &nbsp;&nbsp;&nbsp;segSize<sub>adjusted</sub> = 2<sup>
+		 * <sup><font size=4>&lceil;</font></sup>log<sub>2</sub>
+		 * (segSize<sub>estimated</sub>)<sup><font size=4>&rceil;</font></sup>
+		 * </sup></code><p>
+		 * that is, to the smallest power of 2 greater than
+		 * or equal to the square root of estimated map size, and further adjusted if necessary so that it 
+		 * lies in the range <code>[1024..2<sup>29</sup>]</code>, inclusive.
+		 * @param size the estimated size of the resulting map in the intended application context
+		 * @return object that constrains the subsequent operations in the chain to ensure proper 
+		 * invocation order
+		 */
+		SegCountSpec withExpectedMapSize(int size);
+
+		/**
+		 * {@inheritDoc}
+		 */
+		@Override
+		LoadFactorSpec withInitSegmentCount(int count);
+
+		/**
+		 * {@inheritDoc}
+		 */
+		@Override
+		LoadFactorSpec withInitCapacity(int capacity);
+		
+		@SuppressWarnings("javadoc")
+		void setInitSegmentCount(int count);
+
+		@SuppressWarnings("javadoc")
+		void setInitCapacity(int capacity);
 	}
 	
-	
-	public static class MapConfigBuilder {
-		
+	/**
+	 * @author edgeofmagic
+	 *
+	 */
+	public static class MapConfigBuilderImpl implements MapConfigBuilder {
 		private static int nextPowerOfTwo(int num) {
 			if (num > 1 << 30) {
 				return 1 << 30;
@@ -2129,14 +2288,13 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 		}
 		
 		private static float adjustLoadFactor(float factor) {
-			if (factor > MAX_LOAD_THRESHOLD) {
-				factor = MAX_LOAD_THRESHOLD;
+			if (factor > MAX_LOAD_FACTOR) {
+				factor = MAX_LOAD_FACTOR;
 			}
-			if (factor < MIN_LOAD_THRESHOLD) {
-				factor = MIN_LOAD_THRESHOLD;
+			if (factor < MIN_LOAD_FACTOR) {
+				factor = MIN_LOAD_FACTOR;
 			}
-			return factor;
-			
+			return factor;		
 		}
 		
 		private static int adjustInitSegmentCount(int initSegCount, int maxSegments) {
@@ -2156,7 +2314,6 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 			if (expectedSize > MAX_CAPACITY) {
 				expectedSize = MAX_CAPACITY;
 			}
-			int expected = nextPowerOfTwo(expectedSize);
 
 			int ssize = nextPowerOfTwo((int)Math.sqrt((double) expectedSize));
 			if (ssize < MIN_SEGMENT_SIZE) {
@@ -2181,63 +2338,33 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 			return isegs;
 		}
 
-		private int requestedSegmentSize;
-		private boolean requestedSegmentSizeSet;
-		
-		private int requestedInitSegments;
-		private boolean requestedInitSegmentsSet;
+		private int segmentSize;
+		private boolean segmentSizeSet;
 		
 		private int expectedMapSize;
 		private boolean expectedMapSizeSet;
 		
-		private int requestedInitCapacity;
-		private boolean requestedInitCapacitySet;
+		private int initSegCount;
+		private boolean initSegCountSet;
 		
-		private float requestedLoadFactor;
-		private boolean requestedLoadFactorSet;
-				
-		private MapConfigBuilder() {
-			requestedSegmentSizeSet = false;
-			requestedInitSegmentsSet = false;
+		private int initCapacity;
+		private boolean initCapacitySet;
+		
+		private float loadFactor;
+		private boolean loadFactorSet;
+		
+		MapConfigBuilderImpl() {
+			segmentSizeSet = false;
 			expectedMapSizeSet = false;
-			requestedInitCapacitySet = false;
-			requestedLoadFactorSet = false;
+			initSegCountSet = false;
+			initCapacitySet = false;
+			loadFactorSet = false;
 		}
 		
-		public MapConfigBuilder withSegmentSize(int segSize) {
-			requestedSegmentSize = segSize;
-			requestedSegmentSizeSet = true;
-			return this;
-		}
-		
-		public MapConfigBuilder withExpectedMapSize(int expectedSize) {
-			expectedMapSize = expectedSize;
-			expectedMapSizeSet = true;
-			return this;
-		}
-		
-		public MapConfigBuilder withInitCapacity(int initCap) {
-			requestedInitCapacity = initCap;
-			requestedInitCapacitySet = true;
-			return this;
-		}
-		
-		public MapConfigBuilder withInitSegmentCount(int segCount) {
-			requestedInitSegments = segCount;
-			requestedInitSegmentsSet = true;
-			return this;
-		}
-		
-		public MapConfigBuilder withLoadFactor(float factor) {
-			requestedLoadFactor = factor;
-			requestedLoadFactorSet = true;
-			return this;
-		}
-		
+		@Override
 		public MapConfig build() {
-			int segmentSize;
-			if (requestedSegmentSizeSet) {
-				segmentSize = adjustSegmentSize(requestedSegmentSize);
+			if (segmentSizeSet) {
+				segmentSize = adjustSegmentSize(segmentSize);
 			} else if (expectedMapSizeSet) {
 				segmentSize = segmentSizeFromExpected(expectedMapSize);
 			} else {
@@ -2245,27 +2372,338 @@ public class ConcurrentHashMap<K, V> implements ConcurrentMap<K, V>, Serializabl
 			}
 			int maxSegments = MAX_CAPACITY / segmentSize;
 
-			int initSegments;
-			if (requestedInitSegmentsSet) {
-				initSegments = adjustInitSegmentCount(requestedInitSegments, maxSegments);
-			} else if (requestedInitCapacitySet) {
-				initSegments = initSegmentCountFromCapacity(segmentSize, requestedInitCapacity);
+		
+			if (initSegCountSet) {
+				initSegCount = adjustInitSegmentCount(initSegCount, maxSegments);
+			} else if (initCapacitySet) {
+				initSegCount = initSegmentCountFromCapacity(segmentSize, initCapacity);
 			} else {
-				initSegments = MIN_INITIAL_SEGMENT_COUNT;
+				initSegCount = MIN_INITIAL_SEGMENT_COUNT;
 			}
 			
-			float loadFactor;
-			if (requestedLoadFactorSet) {
-				loadFactor = adjustLoadFactor(requestedLoadFactor);
+			if (loadFactorSet) {
+				loadFactor = adjustLoadFactor(loadFactor);
 			} else {
-				loadFactor = DEFAULT_LOAD_THRESHOLD;
+				loadFactor = DEFAULT_LOAD_FACTOR;
 			}
-			return new MapConfig(segmentSize, initSegments, maxSegments, loadFactor);
+			return new MapConfig(segmentSize, initSegCount, maxSegments, loadFactor);
+		}
+
+		@Override
+		public SegCountSpec withSegmentSize(int segSize) {
+			segmentSize = segSize;
+			segmentSizeSet = true;
+			return new SegCountSpecImpl(this);
+		}
+
+		@Override
+		public SegCountSpec withExpectedMapSize(int expectedSize) {
+			expectedMapSize = expectedSize;
+			expectedMapSizeSet = true;
+			return new SegCountSpecImpl(this);
+
+		}
+
+		@Override
+		public LoadFactorSpec withInitCapacity(int capacity) {
+			setInitCapacity(capacity);
+			return new LoadFactorSpecImpl(this);
+		}
+
+		@Override
+		public LoadFactorSpec withInitSegmentCount(int count) {
+			setInitSegmentCount(count);
+			return new LoadFactorSpecImpl(this);
+		}
+
+		@Override
+		public Builder withLoadFactor(float factor) {
+			setLoadFactor(factor);
+			return new Builder(this);
+		}
+
+
+		@Override
+		public void setLoadFactor(float factor) {
+			loadFactor = factor;
+			loadFactorSet = true;			
+		}
+
+		@Override
+		public void setInitSegmentCount(int count) {
+			initSegCount = count;
+			initSegCountSet = true;
+		}
+
+		@Override
+		public void setInitCapacity(int capacity) {
+			initCapacity = capacity;
+			initCapacitySet = true;
+		}
+
+	}
+	
+	/** An object returned by an invocation of {@code withSegmentSize()} or {@code withExpectedMapSize()}. 
+	 * This interface constrains operations to ensure proper ordering of invocations in a chain, and supports
+	 * methods that determine the number of initial segments in a map of the resulting configuration.
+	 * @author edgeofmagic
+	 *
+	 */
+	public interface SegCountSpec extends LoadFactorSpec {
+		/** Suggests a value for the number of segments created when a map is constructed. 
+		 * 
+		 * The value of {@code count} is adjusted, such that<p> 
+		 * <code>
+		 * &nbsp;&nbsp;&nbsp;count<sub>adjusted</sub> = 2<sup>
+		 * <sup><font size=4>&lceil;</font></sup>log<sub>2</sub>
+		 * (count)<sup><font size=4>&rceil;</font></sup>
+		 * </sup><p>
+		 * </code>
+		 * <p>that is, to the smallest power of 2 greater than
+		 * or equal to {@code count}, and further adjusted if necessary 
+		 * so that it lies in the range {@code [2..n]} inclusive, where<p>
+		 * <code>
+		 * &nbsp;&nbsp;&nbsp;n = 2<sup>30</sup>/segSize</code><p>
+		 * where {@code segSize} is the segment size of the resulting
+		 * configuration.
+		 * @param count suggested number of initial segments in a map of this configuration
+		 * @return object that constrains the subsequent operations in the chain to ensure proper 
+		 * invocation order
+		 */
+		LoadFactorSpec withInitSegmentCount(int count);
+		/** Suggests a value for the initial capacity of a map of the resulting configuration.
+		 * This value is used to determine the initial segment count ({@code initSegCount} 
+		 * for this configuration, such that:<p>
+		 * <code>
+		 * &nbsp;&nbsp;&nbsp;initSegCount = 2<sup>
+		 * <sup><font size=4>&lceil;</font></sup>log<sub>2</sub>
+		 * (capacity / segSize)<sup><font size=4>&rceil;</font></sup>
+		 * </sup><p>
+		 * </code>
+		 * <p>and the resulting initial segment count is further adjusted if necessary 
+		 * so that it lies in the range {@code [2..n]} inclusive, where<p>
+		 * <code>
+		 * &nbsp;&nbsp;&nbsp;n = 2<sup>30</sup>/segSize</code><p> 
+		 * where {@code segSize} is the segment size of the resulting
+		 * configuration.
+		 * @param capacity
+		 * @return object that constrains the subsequent operations in the chain to ensure proper 
+		 * invocation order
+		 */
+		LoadFactorSpec withInitCapacity(int capacity);
+		
+		/**
+		 * {@inheritDoc}
+		 */
+		@Override
+		Builder withLoadFactor(float factor);
+		
+		@SuppressWarnings("javadoc")
+		void setLoadFactor(float factor);
+	}
+	
+	private static class SegCountSpecImpl implements SegCountSpec {
+		
+		private final MapConfigBuilder previous;
+		
+		SegCountSpecImpl(MapConfigBuilder prev) {
+			previous = prev;
+		}
+
+		@Override
+		public MapConfig build() {
+			return previous.build();
+		}
+
+		@Override
+		public LoadFactorSpec withInitCapacity(int capacity) {
+			previous.setInitCapacity(capacity);
+			return new LoadFactorSpecImpl(this);
+		}
+
+		@Override
+		public LoadFactorSpec withInitSegmentCount(int count) {
+			previous.setInitSegmentCount(count);
+			return new LoadFactorSpecImpl(this);
+		}
+
+		@Override
+		public Builder withLoadFactor(float factor) {
+			previous.setLoadFactor(factor);
+			return new Builder(this);
+		}
+
+		@Override
+		public void setLoadFactor(float factor) {
+			previous.setLoadFactor(factor);
+		}
+
+	}
+	
+	/** An object returned by an invocation of {@code withInitCapacity()} or {@code withInitSegCount()}. 
+	 * This interface constrains operations to ensure proper ordering of invocations in a chain, and supports
+	 * the {@code withLoadFactor(float)} method.
+	 * @author edgeofmagic
+	 *
+	 */
+	public interface LoadFactorSpec extends Buildable {
+		/** Suggest a load factor for the configuration. The resulting load factor will be constrained
+		 * to be in the range [0.5, 1.0], inclusive.
+		 * @param factor load factor for maps of this configuration
+		 * @return object that constrains the subsequent operations in the chain to ensure proper 
+		 * invocation order.
+		 */
+		Buildable withLoadFactor(float factor);
+	}
+	
+	/** An object returned by {@code withInitCapacity()} or {@code withInitSegCount()}. This interface constrains
+	 * operations to ensure proper ordering of invocations in a chain.
+	 * @author edgeofmagic
+	 *
+	 */
+	private static class LoadFactorSpecImpl implements LoadFactorSpec {
+		
+		private final SegCountSpec previous;
+				
+		protected LoadFactorSpecImpl(SegCountSpec prev) {
+			previous = prev;
 		}
 		
-		
+		@Override
+		public MapConfig build() {
+			return previous.build();
+		}
+
+		@Override
+		public Buildable withLoadFactor(float factor) {
+			previous.setLoadFactor(factor);
+			return new Builder(this);
+		}
 	}
 	
 
-
+	private static class Builder implements Buildable {
+		
+		private LoadFactorSpec previous;
+		
+		private Builder(LoadFactorSpec prev) {
+			previous = prev;
+		}
+		
+		@Override
+		public MapConfig build() {
+			return previous.build();
+		}
+	}
+	
+	/** A utility that simplifies configuration of a ConcurrentHashMap,
+	 * and guarantees that the resulting configuration conforms
+	 * to the necessary constraints.<p>
+	 * MapConfig uses <i>Fluent</i> style -- cascading method invocations to set individual configuration parameters. The
+	 * interfaces defined within the map configuration utility are not strictly endofunctors; the types and methods
+	 * are defined to enforce a partial ordering of invocations.
+	 * A ConcurrentHashMap requires three configuration values -- segment size, initial segment count, and load factor.
+	 * Invocations in a chain that determine those values appear in that order, although any step may be omitted 
+	 * so that a default value is applied. A chain of method invocations begins with {@link #MapConfig.create()}, 
+	 * and ends with {@code build()}.
+	 * <ul>
+	 * <li>
+	 * The methods {@code withSegmentSize(int)} and {@code withExpectedSize(int)} determine segment size. At most one may be
+	 * invoked in a chain, and must be the first invocation if present. If neither is present, the default segment size is used.
+	 * </li>
+	 * <li>
+	 * The methods {@code withInitSegmentCount(int)} and {@code withInitCapacity(int)} determine the number of 
+	 * initial segments.
+	 * At most one may be invoked in a chain, and must be invoked before {@code withLoadFactor(float)} and after any method 
+	 * that determines segment size. If neither is present, the default initial segment count is used.
+	 * </li>
+	 * <li>
+	 * The method {@code withLoadFactor(float)} sets the load factor (duh), and must be the last method in a chain
+	 * (before {@code build()}, if present. If absent, the default load factor is used.
+	 * </ul>
+	 * The structure of the interfaces enforces the order and exclusion of invocations.
+	 * <p>Examples:
+	 * <code><pre>
+	 * ConcurrentHashMap(MapConfig.create()
+	 * 		.withExpectedSize(4000000)
+	 * 		.withInitCapacity(10000)
+	 * 		.withLoadFactor(0.75f)
+	 * 		.build());</pre></code>
+	 * The term <i>expected size</i> (as in {@code withExectedSize()}) means the nominal size of the map in the application context. 
+	 * The resulting segment size will ensure a reasonable balance of segment and directory size at the specified map size.
+	 * The method {@code withInitialCapacity()} sets the number of initial segments so that the 
+	 * total map capacity at creation approximates the specified value, based on the segment size previously 
+	 * determined. In this case, segment size is set to 2048, and initial segment count is 4.
+	 * <code><pre>
+	 * 
+	 * ConcurrentHashMap(MapConfig.create()
+	 * 		.withSegmentSize(5000)
+	 *		.withInitSegmentCount(100)
+	 *		.build()); </pre></code>
+	 * In this example, segment size and initial segment count are specified more directly. The segment size is adjusted
+	 * to the next largest power of 2 (8192), as is the segment count (128).
+	 * <code><pre>
+	 * 
+	 * ConcurrentHashMap(MapConfig.create()
+	 * 		.withInitCapacity(100000)
+	 * 		.build());</pre></code>
+	 * When no information is supplied that would determine segment size, the default size 1024 is used. The resulting
+	 * segment count is 128 (100000 / 1024, forced to the next largest power of 2).
+	 * <code><pre>
+	 * 
+	 * ConcurrentHashMap(MapConfig.create()
+	 * 		.withExpectedSize(15000000)
+	 * 		.withLoadFactor(0.75f)
+	 * 		.build());</pre></code>
+	 * When no information is supplied that would determine initial segment count, the default value of 2 is used. In 
+	 * this case, segment size is 4096.
+	 * <p>
+	 * An instance of MapConfig is created when {@code build()} is invoked to terminate the chain.<p>
+	 * @author edgeofmagic
+	 *
+	 */
+	public static class MapConfig {
+		private final int segmentSize;
+		private final int initSegments;
+		private final int maxSegmentCount;
+		private final float loadFactor;
+		private MapConfig(int segSize, int initSegs, int maxSegs, float factor) {
+			segmentSize = segSize;
+			initSegments = initSegs;
+			maxSegmentCount = maxSegs;
+			loadFactor = factor;
+		}
+		/** Return the size of segments in a map of this configuration.
+		 * @return segment size
+		 */
+		public int getSegmentSize() {
+			return segmentSize;
+		}
+		/** Return the initial number of segments in a map of this configuration.
+		 * @return inital segment count
+		 */
+		public int getInitSegments() {
+			return initSegments;
+		}
+		/** Return the maximum number of segments a map of this configuration can accommodate, 
+		 * given its segment size.
+		 * @return maximum number of segments in this configuration
+		 */
+		public int getMaxSegmentCount() {
+			return maxSegmentCount;
+		}	
+		/** Return the load factor for maps of this configuration.
+		 * @return load factor
+		 */
+		public float getLoadFactor() {
+			return loadFactor;
+		}
+		/** Creates a map configuration builder object. An invocation of 
+		 * {@code create()} begins an invocation chain to produce a map configuration.
+		 * @return new MapConfiguration object
+		 */
+		public static MapConfigBuilder create() {
+			return new MapConfigBuilderImpl();
+		}
+	}
 }
